@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "sites": {
+    "reddit.com": {
+      "auth_type": "api_client",
+      "domain": "reddit.com",
+      "client_id": "YOUR_REDDIT_CLIENT_ID",
+      "client_secret": "YOUR_REDDIT_CLIENT_SECRET",
+      "user_agent": "YourAppName (by /u/YourUsername)",
+      "username": "YOUR_REDDIT_USERNAME",
+      "password": "YOUR_REDDIT_PASSWORD"
+    },
+    "artsy.net": {
+      "auth_type": "api_client",
+      "domain": "artsy.net",
+      "client_id": "YOUR_ARTSY_CLIENT_ID",
+      "client_secret": "YOUR_ARTSY_CLIENT_SECRET",
+      "user_agent": "YourAppName",
+      "username": "YOUR_USERNAME",
+      "password": "YOUR_PASSWORD"
+    },
+    "cosmos.so": {
+      "auth_type": "login",
+      "domain": "cosmos.so",
+      "username": "YOUR_EMAIL",
+      "password": "YOUR_PASSWORD"
+    },
+    "500px.com": {
+      "auth_type": "cookie",
+      "domain": "500px.com",
+      "cookies": {
+        "x-500px-token": "YOUR_500PX_TOKEN",
+        "x-csrf-token": "YOUR_CSRF_TOKEN"
+      }
+    },
+    "example.com": {
+      "auth_type": "basic",
+      "domain": "example.com",
+      "username": "YOUR_USERNAME",
+      "password": "YOUR_PASSWORD"
+    }
+  }
+}

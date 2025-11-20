@@ -1,0 +1,55 @@
+{
+  "extractor": {
+    "base-directory": "./gallery-dl-output",
+    "skip": true,
+    "archive-format": "{category}_{subcategory}_{filename}.{extension}",
+    
+    "reddit": {
+      "client-id": "YOUR_REDDIT_CLIENT_ID",
+      "client-secret": "YOUR_REDDIT_CLIENT_SECRET",
+      "user-agent": "MediaTool (by /u/YOUR_USERNAME)",
+      "username": "YOUR_REDDIT_USERNAME",
+      "password": "YOUR_REDDIT_PASSWORD"
+    },
+    
+    "500px": {
+      "cookies": {
+        "x-500px-token": "YOUR_500PX_TOKEN",
+        "x-csrf-token": "YOUR_CSRF_TOKEN",
+        "clientside-cookie": "YOUR_CLIENTSIDE_COOKIE"
+      }
+    },
+    
+    "deviantart": {
+      "cookies": {
+        "vd": "1"
+      },
+      "mature": true
+    },
+    
+    "pinterest": {
+      "username": "YOUR_PINTEREST_EMAIL",
+      "password": "YOUR_PINTEREST_PASSWORD"
+    },
+    
+    "flickr": {
+      "username": "YOUR_FLICKR_EMAIL", 
+      "password": "YOUR_FLICKR_PASSWORD"
+    },
+    
+    "instagram": {
+      "cookies-from-browser": "firefox"
+    },
+    
+    "bluesky": {
+      "username": "YOUR_BLUESKY_USERNAME",
+      "password": "YOUR_BLUESKY_PASSWORD"
+    }
+  },
+  
+  "output": {
+    "mode": "auto",
+    "logfile": "gallery-dl.log",
+    "progress": true
+  }
+}

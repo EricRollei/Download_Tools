@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "web-image-scraper": {
+      "command": "python",
+      "args": [
+        "A:\\Comfy25\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\Metadata_system\\mcp_web_scraper_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "A:\\Comfy25\\ComfyUI_windows_portable\\ComfyUI\\custom_nodes\\Metadata_system"
+      }
+    }
+  }
+}

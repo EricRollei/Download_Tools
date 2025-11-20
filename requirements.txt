@@ -1,0 +1,70 @@
+# Download Tools - Requirements
+# ComfyUI custom nodes for media downloading
+
+# ============================================================================
+# DOWNLOADER TOOLS (Required)
+# ============================================================================
+
+# Gallery-dl for downloading from various websites
+gallery-dl>=1.26.0
+
+# Yt-dlp for video/audio downloading
+yt-dlp>=2023.12.0
+
+# Browser cookie support (for authentication)
+browser-cookie3>=0.19.0
+
+# ============================================================================
+# WEB SCRAPER (Required for web_image_scraper node)
+# ============================================================================
+
+# Playwright for browser automation
+playwright>=1.40.0
+
+# Scrapling for enhanced web scraping
+scrapling>=0.2.0
+
+# Image hashing for deduplication
+imagehash>=4.3.0
+
+# Async event loop nesting for ComfyUI compatibility
+nest-asyncio>=1.5.0
+
+# ============================================================================
+# CORE UTILITIES (Required)
+# ============================================================================
+
+# HTTP requests
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Progress bars
+tqdm>=4.66.0
+colorama>=0.4.6
+
+# JSON validation
+jsonschema>=4.19.0
+
+# ============================================================================
+# NOTES
+# ============================================================================
+
+# 1. FFmpeg is required for yt-dlp audio extraction
+#    Download from: https://ffmpeg.org/download.html
+#    Or install via package manager:
+#    - Windows: choco install ffmpeg
+#    - macOS: brew install ffmpeg
+#    - Linux: apt-get install ffmpeg
+
+# 2. For gallery-dl authentication with private content:
+#    - Use browser cookies (automatic)
+#    - Or export cookies to configs/cookies.json
+
+# 3. For web_image_scraper node:
+#    - After installing playwright, run: playwright install
+#    - Configure authentication in configs/web_scraper/auth_config.json
+#    - See configs/web_scraper/README.md for auth setup guide
+
+# 4. These tools are installed system-wide and can be used from command line:
+#    - gallery-dl <url>
+#    - yt-dlp <url>
