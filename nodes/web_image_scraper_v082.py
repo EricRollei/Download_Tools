@@ -521,6 +521,20 @@ class EricWebFileScraper:
         """
         colored_print("--- EricWebFileScraper v0.8 ---", "94")  # Bright blue
         
+        # Sanitize output directory
+        if folder_paths:
+            if not output_dir or output_dir.strip() == "":
+                output_dir = folder_paths.get_output_directory()
+            
+            if not os.path.isabs(output_dir):
+                output_dir = os.path.join(folder_paths.get_output_directory(), output_dir)
+            
+            output_dir = os.path.normpath(output_dir)
+            output_dir = os.path.abspath(output_dir)
+        else:
+            # Fallback if folder_paths is not available (e.g. running standalone)
+            output_dir = os.path.abspath(output_dir)
+        
         import asyncio
         import nest_asyncio
         

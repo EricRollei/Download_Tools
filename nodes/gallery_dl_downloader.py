@@ -48,6 +48,7 @@ import json
 import subprocess
 import tempfile
 import urllib.parse
+import folder_paths
 
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -775,8 +776,20 @@ class GalleryDLNode:
             if archive_file and archive_file.strip() == "":
                 archive_file = "./gallery-dl-archive.sqlite3"
 
-            # Convert relative paths to absolute paths
+            # Sanitize output directory
+            if not output_dir or output_dir.strip() == "":
+                output_dir = folder_paths.get_output_directory()
+            
+            # Handle relative paths - make relative to ComfyUI output directory
+            if not os.path.isabs(output_dir):
+                output_dir = os.path.join(folder_paths.get_output_directory(), output_dir)
+            
+            # Normalize path to resolve .. and .
+            output_dir = os.path.normpath(output_dir)
+            
+            # Ensure absolute path
             output_dir = os.path.abspath(output_dir)
+
             if archive_file:
                 archive_file = os.path.abspath(archive_file)
             if config_path:
