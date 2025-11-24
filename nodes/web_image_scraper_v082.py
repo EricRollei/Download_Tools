@@ -523,14 +523,25 @@ class EricWebFileScraper:
         
         # Sanitize output directory
         if folder_paths:
+            base_output_dir = os.path.abspath(folder_paths.get_output_directory())
+            
             if not output_dir or output_dir.strip() == "":
-                output_dir = folder_paths.get_output_directory()
-            
-            if not os.path.isabs(output_dir):
-                output_dir = os.path.join(folder_paths.get_output_directory(), output_dir)
-            
-            output_dir = os.path.normpath(output_dir)
-            output_dir = os.path.abspath(output_dir)
+                output_dir = base_output_dir
+            else:
+                if not os.path.isabs(output_dir):
+                    output_dir = os.path.join(base_output_dir, output_dir)
+                
+                output_dir = os.path.normpath(output_dir)
+                output_dir = os.path.abspath(output_dir)
+                
+                # Security check: Ensure path is within base_output_dir
+                try:
+                    if os.path.commonpath([base_output_dir, output_dir]) != base_output_dir:
+                        print(f"Warning: Path '{output_dir}' is outside the allowed output directory. Reverting to default.")
+                        output_dir = base_output_dir
+                except ValueError:
+                    print(f"Warning: Path '{output_dir}' is on a different drive. Reverting to default.")
+                    output_dir = base_output_dir
         else:
             # Fallback if folder_paths is not available (e.g. running standalone)
             output_dir = os.path.abspath(output_dir)
