@@ -1,0 +1,26 @@
+[project]
+name = "download_tools"
+description = "ComfyUI custom nodes for large-scale media downloading via gallery-dl, yt-dlp, and advanced web scrapers."
+readme = "README.md"
+version = "0.8.3"
+license = { file = "LICENSE.md" }
+requires-python = ">=3.8"
+classifiers = [
+    "Operating System :: OS Independent"
+]
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[project.urls]
+Repository = "https://github.com/EricRollei/Download_Tools"
+Documentation = "https://github.com/EricRollei/Download_Tools/tree/main/Docs"
+"Bug Tracker" = "https://github.com/EricRollei/Download_Tools/issues"
+
+[tool.comfy]
+PublisherId = "EricRollei"
+DisplayName = "Download_Tools"
+Icon = ""
+includes = []
+"requires-comfyui" = ">=1.0.0"
