@@ -1,14 +1,45 @@
 [project]
-name = "download_tools"
-description = "ComfyUI custom nodes for large-scale media downloading via gallery-dl, yt-dlp, and advanced web scrapers."
+name = "comfyui-download-tools"
+description = "ComfyUI custom nodes for large-scale media downloading via gallery-dl, yt-dlp, and advanced web scrapers. Download from 1000+ sites including Instagram, Reddit, Twitter, YouTube, TikTok, DeviantArt, Pixiv, and more."
 readme = "README.md"
 version = "0.8.3"
-license = { file = "LICENSE.md" }
-requires-python = ">=3.8"
+license = "LicenseRef-Proprietary"
+requires-python = ">=3.10"
+keywords = [
+    "comfyui",
+    "download",
+    "gallery-dl",
+    "yt-dlp",
+    "web-scraper",
+    "instagram",
+    "youtube",
+    "twitter",
+    "reddit",
+    "tiktok",
+    "deviantart",
+    "pixiv",
+    "media",
+    "video",
+    "image"
+]
 classifiers = [
-    "Operating System :: OS Independent"
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Internet :: WWW/HTTP"
 ]
 dynamic = ["dependencies"]
+
+[[project.authors]]
+name = "Eric Hiss"
+email = "eric@historic.camera"
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
@@ -19,8 +50,12 @@ Documentation = "https://github.com/EricRollei/Download_Tools/tree/main/Docs"
 "Bug Tracker" = "https://github.com/EricRollei/Download_Tools/issues"
 
 [tool.comfy]
-PublisherId = "EricRollei"
-DisplayName = "Download_Tools"
+PublisherId = "ericrollei"
+DisplayName = "Download Tools"
 Icon = ""
 includes = []
-"requires-comfyui" = ">=1.0.0"
+
+[tool.comfy.dependencies]
+gallery-dl = ">=1.26.0"
+yt-dlp = ">=2023.12.0"
+playwright = ">=1.40.0"
