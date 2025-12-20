@@ -27,6 +27,7 @@ See CREDITS.md for complete list of dependencies and their licenses.
 
 import os
 import sys
+import importlib.util
 from pathlib import Path
 
 # Initialize node mappings
@@ -56,30 +57,26 @@ def load_nodes():
         if filename.endswith(".py") and not filename.startswith("_"):
             module_name = filename[:-3]
             try:
-                # Import the module
+                # Import the module using importlib
                 module_path = os.path.join(nodes_dir, filename)
                 print(f"[Download Tools] Loading node: {module_name}")
                 
-                # Read and execute the module
-                with open(module_path, 'r', encoding='utf-8') as f:
-                    module_code = f.read()
-                
-                # Create a module namespace
-                module_namespace = {
-                    '__name__': f'download_tools.nodes.{module_name}',
-                    '__file__': module_path,
-                }
-                
-                # Execute the module code
-                exec(module_code, module_namespace)
+                # Use importlib for safe module loading
+                spec = importlib.util.spec_from_file_location(
+                    f'download_tools.nodes.{module_name}',
+                    module_path
+                )
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[spec.name] = module
+                spec.loader.exec_module(module)
                 
                 # Extract NODE_CLASS_MAPPINGS and NODE_DISPLAY_NAME_MAPPINGS
-                if 'NODE_CLASS_MAPPINGS' in module_namespace:
-                    NODE_CLASS_MAPPINGS.update(module_namespace['NODE_CLASS_MAPPINGS'])
-                    print(f"[Download Tools] ✓ Registered classes from {module_name}: {list(module_namespace['NODE_CLASS_MAPPINGS'].keys())}")
+                if hasattr(module, 'NODE_CLASS_MAPPINGS'):
+                    NODE_CLASS_MAPPINGS.update(module.NODE_CLASS_MAPPINGS)
+                    print(f"[Download Tools] ✓ Registered classes from {module_name}: {list(module.NODE_CLASS_MAPPINGS.keys())}")
                 
-                if 'NODE_DISPLAY_NAME_MAPPINGS' in module_namespace:
-                    NODE_DISPLAY_NAME_MAPPINGS.update(module_namespace['NODE_DISPLAY_NAME_MAPPINGS'])
+                if hasattr(module, 'NODE_DISPLAY_NAME_MAPPINGS'):
+                    NODE_DISPLAY_NAME_MAPPINGS.update(module.NODE_DISPLAY_NAME_MAPPINGS)
                 
             except Exception as e:
                 print(f"[Download Tools] Error loading {module_name}: {e}")

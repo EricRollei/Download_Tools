@@ -3,7 +3,7 @@ name = "comfyui-download-tools"
 description = "ComfyUI custom nodes for large-scale media downloading via gallery-dl, yt-dlp, and advanced web scrapers. Download from 1000+ sites including Instagram, Reddit, Twitter, YouTube, TikTok, DeviantArt, Pixiv, and more."
 readme = "README.md"
 version = "0.8.3"
-license = "LicenseRef-Proprietary"
+license = { file = "LICENSE.md" }
 requires-python = ">=3.10"
 keywords = [
     "comfyui",
