@@ -315,8 +315,11 @@ class BaseSiteHandler:
             'cdninstagram.com',
             'twimg.com',
             'imgix.net',
+            'tildacdn.com',  # Tilda CDN (static.tildacdn.com, optim.tildacdn.com, thb.tildacdn.com)
             'cdn.',
             'static.',
+            'optim.',  # Optimized/resized image subdomains
+            'thb.',    # Thumbnail subdomains
             'assets.',
             'media.',
             'content.',

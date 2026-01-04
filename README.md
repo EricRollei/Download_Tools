@@ -74,7 +74,48 @@ ComfyUI custom nodes for downloading media from 1000+ websites including Instagr
 
 **Supported Sites:** YouTube, TikTok, Vimeo, Twitch, Facebook, Instagram, Twitter, and 1000+ more. See [yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
 
-## 🔐 Authentication
+## � Instagram Downloads
+
+**For Instagram, use Gallery-dl as it is better.** Gallery-dl has native Instagram API support, handles pagination, rate limits, and can download posts, stories, reels, and highlights.
+
+### Recommended Settings
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| `config_path` | `./configs/gallery-dl.conf` | Contains your Instagram cookies |
+| `cookie_file` | *(leave empty)* | Cookies are in config file |
+| `use_browser_cookies` | ❌ False | Browser cookies require admin access |
+
+### Why Not Browser Cookies?
+
+- **Chrome/Edge:** Require admin privileges AND browser must be closed
+- **Firefox:** Works without admin, but less reliable than config file
+- **Config file:** Most reliable method - always works
+
+### Setting Up Instagram Authentication
+
+1. **Export your Instagram cookies** from Chrome/Firefox using "Get cookies.txt LOCALLY" extension
+2. **Copy the key cookies** to `configs/gallery-dl.conf` in the `instagram` section:
+   ```json
+   "instagram": {
+       "cookies": {
+           "sessionid": "YOUR_SESSION_ID",
+           "ds_user_id": "YOUR_USER_ID", 
+           "csrftoken": "YOUR_CSRF_TOKEN",
+           "mid": "YOUR_MID_VALUE"
+       }
+   }
+   ```
+3. **Use in node:**
+   - Set `config_path` to `./configs/gallery-dl.conf`
+   - Leave `cookie_file` empty
+   - Set `use_browser_cookies` to False
+
+### Cookie Expiration
+
+Instagram session cookies expire after ~1 year. If downloads start failing with 401 errors, export fresh cookies from your browser.
+
+## �🔐 Authentication
 
 Many sites require authentication for private content:
 
@@ -120,15 +161,17 @@ Detailed guides available in `Docs/`:
 Already installed! It's a Python package. The node will find it automatically.
 
 ### "Chrome cookies not accessible"
-Try:
+Chrome locks its cookie database while running. Solutions:
+- Close Chrome completely before running
 - Run ComfyUI as administrator
-- Use Firefox instead
-- Export cookies manually (Method 2)
+- Use Firefox instead (doesn't require admin)
+- **Best:** Use config file with cookies (see Instagram section above)
 
 ### "Instagram/Reddit downloads fail"
 Authentication required:
-- Enable `use_browser_cookies`
-- Or export cookies from logged-in browser
+- Use `config_path: ./configs/gallery-dl.conf` with cookies
+- Or enable `use_browser_cookies` with Firefox
+- 401 Unauthorized = expired cookies, export fresh ones
 
 ### "CUDA out of memory" / "FFmpeg not found"
 For audio extraction:

@@ -689,7 +689,7 @@ class GalleryDLNode:
                 }),
                 "config_path": ("STRING", {
                     "default": "",
-                    "tooltip": "Path to gallery-dl config file. For Instagram: LEAVE EMPTY (not needed). For Reddit: use './configs/gallery-dl-no-reddit.conf' to disable Reddit or './configs/gallery-dl.conf' with your API credentials."
+                    "tooltip": "Path to gallery-dl config file. For Instagram: use './configs/gallery-dl.conf' (has cookies). For Reddit: use './configs/gallery-dl-no-reddit.conf' or add API credentials to gallery-dl.conf."
                 }),
                 "cookie_file": ("STRING", {
                     "default": "",
@@ -701,7 +701,7 @@ class GalleryDLNode:
                 }),
                 "browser_name": (["firefox", "chrome", "chromium", "edge", "safari", "opera"], {
                     "default": "firefox",
-                    "tooltip": "Browser to extract cookies from (Firefox works without admin, Chrome/Edge require admin)"
+                    "tooltip": "Browser to extract cookies from. Firefox works without admin. Chrome/Edge require admin AND browser closed. Recommended: use config file with cookies instead."
                 }),
                 "use_download_archive": ("BOOLEAN", {
                     "default": True,
@@ -898,7 +898,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "GalleryDLDownloader": "Gallery-dl Downloader",
+    "GalleryDLDownloader": "Social Media Downloader (gallery-dl)",
 }
 
 # Export for ComfyUI

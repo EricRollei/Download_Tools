@@ -855,6 +855,12 @@ class GenericWebsiteWithAuthHandler(BaseSiteHandler):
                 
             # Update the URL in the item
             item['url'] = url
+            
+            # Mark CDN domains as trusted to allow cross-domain downloads
+            # This is critical for sites like Tilda that serve images from tildacdn.com
+            if self.is_trusted_domain(url):
+                item['trusted_cdn'] = True
+            
             unique_items.append(item)
             seen_urls.add(clean_url)
         
@@ -981,16 +987,50 @@ class GenericWebsiteWithAuthHandler(BaseSiteHandler):
                     // Get all image elements
                     const imgElements = document.querySelectorAll('img');
                     imgElements.forEach(img => {
-                        // Check src attribute
-                        if (img.src && img.src.startsWith('http')) {
+                        // Check for data-src first (lazy-loaded images like Tilda CDN)
+                        // These often contain the full-resolution original
+                        // Tilda uses data-img-zoom-url and data-original for full-res zoomable images
+                        const dataSrc = img.getAttribute('data-img-zoom-url') ||
+                                        img.getAttribute('data-original') || 
+                                        img.getAttribute('data-src') || 
+                                        img.getAttribute('data-lazy-src') ||
+                                        img.getAttribute('data-full-src') ||
+                                        img.getAttribute('data-image');
+                        
+                        if (dataSrc && dataSrc.startsWith('http')) {
                             items.push({
-                                url: img.src,
+                                url: dataSrc,
                                 alt: img.alt || '',
                                 title: img.title || '',
                                 width: img.naturalWidth || img.width || 0,
                                 height: img.naturalHeight || img.height || 0,
-                                type: 'image'
+                                type: 'image',
+                                isFullRes: true  // Mark as likely full-res from data attribute
                             });
+                        }
+                        
+                        // Check src attribute
+                        if (img.src && img.src.startsWith('http')) {
+                            // Skip if it's a placeholder/thumbnail URL from known CDNs with resize markers
+                            const isResized = img.src.includes('/resize/') || 
+                                              img.src.includes('/-/empty/') ||
+                                              img.src.includes('/thb.') ||
+                                              img.src.includes('_thumb') ||
+                                              img.src.includes('_small');
+                            
+                            // If we already have a data-src for this image, prefer that
+                            // Only add src if it looks like a full-res version or no data-src exists
+                            if (!dataSrc || !isResized) {
+                                items.push({
+                                    url: img.src,
+                                    alt: img.alt || '',
+                                    title: img.title || '',
+                                    width: img.naturalWidth || img.width || 0,
+                                    height: img.naturalHeight || img.height || 0,
+                                    type: 'image',
+                                    isFullRes: !isResized
+                                });
+                            }
                         }
                         
                         // Check srcset attribute
@@ -1089,10 +1129,12 @@ class GenericWebsiteWithAuthHandler(BaseSiteHandler):
                 alt_text = item.get('alt', '') or page_title
                 title = item.get('title', '') or alt_text or page_title
                 
-                # Filter by size if available
+                # Filter by size if available - but skip for items marked as full-res from data attributes
+                # (lazy-loaded images report thumbnail dimensions, not actual full-res dimensions)
+                is_full_res = item.get('isFullRes', False)
                 width = item.get('width', 0)
                 height = item.get('height', 0)
-                if width > 0 and height > 0:
+                if width > 0 and height > 0 and not is_full_res:
                     if width < self.min_width or height < self.min_height:
                         continue
                 

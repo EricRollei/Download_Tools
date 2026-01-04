@@ -931,7 +931,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "YtDlpDownloader": "Yt-dlp Downloader",
+    "YtDlpDownloader": "YouTube Downloader (yt-dlp)",
 }
 
 # Export for ComfyUI

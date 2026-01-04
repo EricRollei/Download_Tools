@@ -355,7 +355,11 @@ class EricWebFileScraper:
                 # --- Crawling Options ---
                 "crawl_links": ("BOOLEAN", {"default": False, "label_on": "Follow Links", "label_off": "Single Page"}),
                 "crawl_depth": ("INT", {"default": 1, "min": 1, "max": 5, "step": 1, "display": "Link Crawl Depth"}),
-                "max_pages": ("INT", {"default": 10, "min": 1, "max": 100, "step": 1, "display": "Max Pages to Visit"}),
+                "max_pages": ("INT", {"default": 50, "min": 1, "max": 500, "step": 5, "display": "Max Pages to Visit"}),
+                "crawl_subfolders": ("BOOLEAN", {"default": True, "label_on": "Subfolder Per Page", "label_off": "Single Folder"}),
+                "skip_first_page_download": ("BOOLEAN", {"default": False, "label_on": "Skip Listing Page", "label_off": "Download All Pages"}),
+                "link_include_pattern": ("STRING", {"default": "", "multiline": False, "placeholder": "Regex to match links (e.g. /[A-Z][a-z]+_)"}),
+                "link_exclude_pattern": ("STRING", {"default": "/production|/men|/women|/direct|/newface|/contacts|/about|/policy|/store|international", "multiline": False, "placeholder": "Regex to exclude links"}),
                 
                 # --- Media Types ---
                 "download_audio": ("BOOLEAN", {"default": False, "label_on": "Extract Audio", "label_off": "Skip Audio"}),
@@ -1048,7 +1052,11 @@ class EricWebFileScraper:
                     move_duplicates=move_duplicates,
                     max_files=max_files,
                     use_parallel=use_parallel,
-                    max_workers=max_workers
+                    max_workers=max_workers,
+                    crawl_subfolders=kwargs.get('crawl_subfolders', True),
+                    link_include_pattern=kwargs.get('link_include_pattern', ''),
+                    link_exclude_pattern=kwargs.get('link_exclude_pattern', ''),
+                    skip_first_page_download=kwargs.get('skip_first_page_download', False)
                 )
 
                 # Store cache flags so _cleanup_resources() can read them later
@@ -1475,9 +1483,20 @@ class EricWebFileScraper:
         move_duplicates=False,
         max_files=0,
         use_parallel=True,
-        max_workers=4
+        max_workers=4,
+        crawl_subfolders=True,
+        link_include_pattern="",
+        link_exclude_pattern="",
+        skip_first_page_download=False
     ):
-        """Extract content from the current page and follow links (async version)."""
+        """Extract content from the current page and follow links (async version).
+        
+        Args:
+            crawl_subfolders: If True, save each page's images in a subfolder named after the page path
+            link_include_pattern: Regex pattern - only follow links matching this pattern (if set)
+            link_exclude_pattern: Regex pattern - exclude links matching this pattern
+            skip_first_page_download: If True, don't download from the starting page (depth 0), only from linked pages
+        """
         if visited_urls is None:
             visited_urls = set()
 
@@ -1540,8 +1559,28 @@ class EricWebFileScraper:
                 except Exception as e:
                     print(f"Error during generic extraction: {e}")
 
-            if media_items and output_path:
+            # Skip downloading from the first page if skip_first_page_download is enabled
+            should_download = True
+            if skip_first_page_download and current_depth == 0:
+                print(f"Skipping download from listing page (depth 0): {current_url}")
+                should_download = False
+
+            if media_items and output_path and should_download:
                 print(f"Found {len(media_items)} media items, processing for download")
+                
+                # Determine output path - use subfolder if enabled and not on base page
+                page_output_path = output_path
+                if crawl_subfolders and current_depth > 0:
+                    # Create subfolder based on page path
+                    parsed_current = urlparse(current_url)
+                    page_path = parsed_current.path.strip('/')
+                    if page_path:
+                        # Sanitize for folder name (replace / with _, remove special chars)
+                        subfolder_name = re.sub(r'[<>:"/\\|?*]', '_', page_path)
+                        subfolder_name = subfolder_name.lower().replace('/', '_')
+                        page_output_path = os.path.join(output_path, subfolder_name)
+                        os.makedirs(page_output_path, exist_ok=True)
+                        print(f"  Saving to subfolder: {subfolder_name}")
 
                 download_kwargs = {
                     'filename_prefix': filename_prefix,
@@ -1563,11 +1602,11 @@ class EricWebFileScraper:
                 try:
                     if use_parallel:
                         downloaded_data, _ = await self._process_download_queue_parallel(
-                            media_items, output_path, stats, max_workers=max_workers, **download_kwargs
+                            media_items, page_output_path, stats, max_workers=max_workers, **download_kwargs
                         )
                     else:
                         downloaded_data, _ = await self._process_download_queue(
-                            media_items, output_path, stats, **download_kwargs
+                            media_items, page_output_path, stats, **download_kwargs
                         )
 
                     if downloaded_data:
@@ -1587,8 +1626,12 @@ class EricWebFileScraper:
         try:
             link_locator = page.locator("a[href]:visible")
             link_count = await link_locator.count()
+            
+            # Use max_pages as upper limit for link extraction (was hardcoded to 50)
+            max_links_to_check = max(max_pages * 2, 200)  # Check more links than max_pages to allow for filtering
+            print(f"Found {link_count} visible links, checking up to {min(link_count, max_links_to_check)}")
 
-            for i in range(min(link_count, 50)):
+            for i in range(min(link_count, max_links_to_check)):
                 link = link_locator.nth(i)
                 href = await link.get_attribute("href")
 
@@ -1603,6 +1646,25 @@ class EricWebFileScraper:
 
                 if same_domain_only and link_domain != base_domain:
                     continue
+                
+                # Apply link pattern filters
+                if link_include_pattern:
+                    try:
+                        if not re.search(link_include_pattern, href, re.IGNORECASE):
+                            continue  # Skip if doesn't match include pattern
+                    except re.error as e:
+                        if debug_mode:
+                            print(f"Invalid include pattern regex: {e}")
+                
+                if link_exclude_pattern:
+                    try:
+                        if re.search(link_exclude_pattern, href, re.IGNORECASE):
+                            if debug_mode:
+                                print(f"  Excluding link (matched exclude pattern): {href}")
+                            continue  # Skip if matches exclude pattern
+                    except re.error as e:
+                        if debug_mode:
+                            print(f"Invalid exclude pattern regex: {e}")
 
                 if href not in visited_urls:
                     links.append(href)
@@ -1652,7 +1714,11 @@ class EricWebFileScraper:
                         move_duplicates=move_duplicates,
                         max_files=max_files,
                         use_parallel=use_parallel,
-                        max_workers=max_workers
+                        max_workers=max_workers,
+                        crawl_subfolders=crawl_subfolders,
+                        link_include_pattern=link_include_pattern,
+                        link_exclude_pattern=link_exclude_pattern,
+                        skip_first_page_download=skip_first_page_download
                     )
 
                     media_items_for_download.extend(sub_items)
@@ -2243,6 +2309,18 @@ class EricWebFileScraper:
                 # Check if this is a trusted CDN URL marked by the handler
                 is_trusted_cdn = item_data.get('trusted_cdn', False)
                 
+                # Fallback: Check common CDN domains directly if not already marked
+                # This handles cases where items come from cache/network monitoring
+                if not is_trusted_cdn and item_domain != base_domain:
+                    cdn_domains = [
+                        'tildacdn.com', 'cloudfront.net', 'cloudflare.com', 
+                        'akamaihd.net', 'fastly.net', 'imgix.net', 'twimg.com',
+                        'cdninstagram.com', 'googleapis.com', 'gstatic.com'
+                    ]
+                    is_trusted_cdn = any(cdn in item_domain.lower() for cdn in cdn_domains)
+                    if is_trusted_cdn:
+                        item_data['trusted_cdn'] = True  # Mark for future reference
+                
                 # Debug: Show what's happening
                 if item_domain != base_domain:
                     print(f"  Domain check: {item_domain} vs {base_domain}, trusted_cdn={is_trusted_cdn}")
@@ -2403,6 +2481,54 @@ class EricWebFileScraper:
         print(f"Finished processing download queue. Successfully processed {len(downloaded_files_data)} new files.")
         return downloaded_files_data, downloaded_images_cache
 
+    def _upgrade_tilda_url(self, url):
+        """
+        Upgrade Tilda CDN URLs from thumbnail/resized versions to full resolution.
+        
+        Tilda URL patterns:
+        - Thumbnail: https://optim.tildacdn.com/tild...//-/resize/720x/-/format/webp/filename.jpg.webp
+        - Original:  https://static.tildacdn.com/tild.../filename.jpg
+        
+        The key is:
+        1. Change optim/thb to static
+        2. Remove /-/resize/.../-/format/.../ path segments
+        3. Remove the .webp extension that was added
+        """
+        if not url or 'tildacdn.com' not in url.lower():
+            return url
+        
+        original_url = url
+        
+        # Replace optim/thb subdomain with static
+        url = re.sub(r'https?://optim\.tildacdn\.com', 'https://static.tildacdn.com', url)
+        url = re.sub(r'https?://thb\.tildacdn\.com', 'https://static.tildacdn.com', url)
+        
+        # Remove the image transformation path segments
+        # Pattern: /-/resize/NNNx/-/format/webp/ or similar
+        # These need to be removed to get to the original
+        url = re.sub(r'/-/resize/\d+x\d*/', '/', url)
+        url = re.sub(r'/-/resize/\d+/', '/', url)
+        url = re.sub(r'/-/resizeb/\d+x\d*/', '/', url)
+        url = re.sub(r'/-/resizeb/\d+/', '/', url)
+        url = re.sub(r'/-/format/webp/', '/', url)
+        url = re.sub(r'/-/format/jpeg/', '/', url)
+        url = re.sub(r'/-/quality/\d+/', '/', url)
+        url = re.sub(r'/-/empty/', '/', url)
+        
+        # Remove the added .webp extension (original is .jpg, not .jpg.webp)
+        # This handles: filename.jpg.webp -> filename.jpg
+        if url.endswith('.webp') and '.jpg.webp' in url:
+            url = url[:-5]  # Remove .webp
+        elif url.endswith('.webp') and '.png.webp' in url:
+            url = url[:-5]  # Remove .webp
+        
+        # Clean up any double slashes created by removal (except in https://)
+        url = re.sub(r'([^:])//+', r'\1/', url)
+        
+        if url != original_url:
+            print(f"  Upgraded Tilda URL: {original_url[:70]}... -> {url[:70]}...")
+        
+        return url
 
     def download_file(self, url_or_dict, output_path, index, prefix, min_width, min_height, hash_algo, download_images, download_videos):
         """Downloads a single file, checks dimensions, calculates hash, and returns details."""
@@ -2417,6 +2543,9 @@ class EricWebFileScraper:
         if not url:
             print("Empty URL provided")
             return None, None, None, None, None, "Missing URL"
+        
+        # Upgrade Tilda CDN URLs to full resolution
+        url = self._upgrade_tilda_url(url)
 
         # Basic URL validation
         parsed_url = urlparse(url)
@@ -3725,6 +3854,15 @@ class EricWebFileScraper:
                 # Check if this is a trusted CDN URL marked by the handler
                 is_trusted_cdn = item_data.get('trusted_cdn', False)
                 
+                # Fallback: check common CDN domains directly (handles items from DevTools cache)
+                if not is_trusted_cdn:
+                    cdn_domains = ['tildacdn.com', 'cloudfront.net', 'cloudflare.com', 'akamaized.net', 
+                                   'fastly.net', 'cdn.', 'assets.', 'static.', 'media.', 'images.']
+                    is_trusted_cdn = any(cdn in item_domain.lower() for cdn in cdn_domains)
+                    if is_trusted_cdn:
+                        with global_lock:
+                            print(f"  Auto-trusted CDN domain: {item_domain}")
+                
                 # Debug: Show what's happening
                 if item_domain != base_domain:
                     with global_lock:
@@ -3898,8 +4036,13 @@ class EricWebFileScraper:
                 if item_url and not self.check_url_processed(item_url):
                     filtered_items.append((index, item_data))
         
+        # If all items were already processed, return early
+        if not filtered_items:
+            print("All items have already been processed, skipping download.")
+            return downloaded_files_data, downloaded_images_cache
+        
         # Process in batches for better control
-        batch_size = min(max_workers * 2, len(filtered_items))
+        batch_size = max(1, min(max_workers * 2, len(filtered_items)))  # Ensure batch_size is at least 1
         for i in range(0, len(filtered_items), batch_size):
             # Check for cancellation before each batch
             if self.cancellation_requested or self._check_cancellation():
@@ -4334,19 +4477,42 @@ class EricWebFileScraper:
                     if not is_visible:
                         continue
                         
-                    # Get image attributes
+                    # Get image attributes - check data-src first for lazy-loaded/full-res images
                     src = await img.get_attribute("src")
+                    data_src = await img.get_attribute("data-src")
+                    data_original = await img.get_attribute("data-original")
+                    data_lazy_src = await img.get_attribute("data-lazy-src")
+                    data_full_src = await img.get_attribute("data-full-src")
+                    # Tilda CDN specific: data-img-zoom-url contains full-res URL for zoomable images
+                    data_img_zoom_url = await img.get_attribute("data-img-zoom-url")
                     srcset = await img.get_attribute("srcset")
                     alt = await img.get_attribute("alt") or ""
                     title_attr = await img.get_attribute("title") or ""
                     
+                    # Prefer data-src attributes as they often contain full-resolution URLs
+                    # (e.g., Tilda CDN uses data-original or data-img-zoom-url for full-res, src for thumbnails)
+                    full_res_url = data_img_zoom_url or data_original or data_src or data_lazy_src or data_full_src
+                    
                     # Skip common non-content images
-                    if not src or any(x in src.lower() for x in ['spacer.gif', 'pixel.gif', 'transparent.gif', 'icon']):
+                    if not src and not full_res_url:
+                        continue
+                    if src and any(x in src.lower() for x in ['spacer.gif', 'pixel.gif', 'transparent.gif', 'icon']):
                         continue
                         
-                    # Process srcset
+                    # Determine the best URL to use
+                    # Priority: data-src (full-res) > srcset highest res > src
                     image_url = src
-                    if srcset:
+                    
+                    # Check if src is a thumbnail/resized version (common CDN patterns)
+                    src_is_thumbnail = src and any(pattern in src for pattern in [
+                        '/resize/', '/-/empty/', '/thb.', '_thumb', '_small', 
+                        '/optim.', '/thumbnail', 'w_100', 'h_100'
+                    ])
+                    
+                    # If we have a full-res data attribute, prefer that
+                    if full_res_url and full_res_url.startswith('http'):
+                        image_url = full_res_url
+                    elif srcset:
                         high_res = self._get_highest_res_from_srcset(srcset)
                         if high_res:
                             image_url = high_res
@@ -4422,14 +4588,18 @@ class EricWebFileScraper:
                     print(f"Error extracting from iframe: {e}")
 
             # --- Extract images from data-* attributes on any element ---
-            data_attrs = ["data-large", "data-image", "data-original", "data-url"]
+            # Include data-src for lazy-loaded images (Tilda, many other CMSes)
+            # data-img-zoom-url is Tilda CDN's attribute for full-resolution zoomable images
+            data_attrs = ["data-img-zoom-url", "data-original", "data-src", "data-large", 
+                          "data-image", "data-url", "data-lazy-src", "data-full-src", 
+                          "data-hi-res", "data-zoom-image"]
             for attr in data_attrs:
                 elements = await page.locator(f"[{attr}]").all()
                 for el in elements:
-                    url = await el.get_attribute(attr)
-                    if url and url.startswith("http"):
+                    attr_url = await el.get_attribute(attr)
+                    if attr_url and attr_url.startswith("http"):
                         media_items.append({
-                            'url': url,
+                            'url': attr_url,
                             'title': f"Image from {attr}",
                             'source_url': url,
                             'type': 'image'
