@@ -53,6 +53,26 @@ import folder_paths
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+# Import persistent settings manager
+try:
+    from ..utils.persistent_settings import get_persistent_setting, set_persistent_setting
+    PERSISTENT_SETTINGS_AVAILABLE = True
+except ImportError:
+    try:
+        import sys
+        utils_dir = os.path.dirname(os.path.dirname(__file__))
+        if utils_dir not in sys.path:
+            sys.path.insert(0, utils_dir)
+        from utils.persistent_settings import get_persistent_setting, set_persistent_setting
+        PERSISTENT_SETTINGS_AVAILABLE = True
+    except ImportError:
+        PERSISTENT_SETTINGS_AVAILABLE = False
+        def get_persistent_setting(node_type, key, default=""):
+            return default
+        def set_persistent_setting(node_type, key, value):
+            return False
+        print("Warning: persistent_settings not available. Config paths will not persist.")
+
 
 class GalleryDLDownloader:
     def __init__(
@@ -72,6 +92,12 @@ class GalleryDLDownloader:
         # New advanced options
         instagram_include: str = "posts",
         extra_options: str = "",
+        # Minimum resolution filtering
+        min_image_width: int = 768,
+        min_image_height: int = 768,
+        filter_by_resolution: bool = True,
+        # Timeout settings
+        download_timeout: int = 600,
     ):
         self.url_list = url_list or []
         self.url_file = url_file
@@ -87,6 +113,10 @@ class GalleryDLDownloader:
         self.organize_files = organize_files
         self.instagram_include = instagram_include
         self.extra_options = extra_options
+        self.min_image_width = min_image_width
+        self.min_image_height = min_image_height
+        self.filter_by_resolution = filter_by_resolution
+        self.download_timeout = download_timeout
         
         # Initialize debug info
         self.debug_info = []  # Store debug information for status reporting
@@ -106,11 +136,6 @@ class GalleryDLDownloader:
 
         command += ["-d", self.output_dir]
 
-        # Use config file if provided
-        if self.config_path:
-            command += ["--config", self.config_path]
-            self.debug_info.append(f"📄 Using config file: {self.config_path}")
-
         # Detect target sites for better authentication handling
         target_sites = set()
         for url in urls:
@@ -120,7 +145,20 @@ class GalleryDLDownloader:
                 target_sites.add('reddit')
             elif 'twitter.com' in url or 'x.com' in url:
                 target_sites.add('twitter')
-            # Add more site detection as needed
+            elif 'flickr.com' in url:
+                target_sites.add('flickr')
+            elif 'deviantart.com' in url:
+                target_sites.add('deviantart')
+            elif '500px.com' in url:
+                target_sites.add('500px')
+            elif 'pinterest' in url:
+                target_sites.add('pinterest')
+            elif 'bsky.app' in url or 'bluesky' in url:
+                target_sites.add('bluesky')
+            elif 'tumblr.com' in url:
+                target_sites.add('tumblr')
+            elif 'artstation.com' in url:
+                target_sites.add('artstation')
         
         if target_sites:
             self.debug_info.append(f"🎯 Detected target sites: {', '.join(target_sites)}")
@@ -130,23 +168,30 @@ class GalleryDLDownloader:
             self.debug_info.append("⚠️ WARNING: Reddit may hang or require updated API credentials")
             self.debug_info.append("   Consider testing with Instagram or other sites first")
 
-        # Handle cookie file (takes precedence over browser cookies)
-        if self.cookie_file:
-            # Warn if using cookies for non-matching sites (but allow Instagram + config combo)
-            if target_sites and 'instagram' not in target_sites:
-                self.debug_info.append(f"⚠️ Warning: Using Instagram cookies for {', '.join(target_sites)} - this may cause authentication conflicts")
-            elif target_sites and 'instagram' in target_sites:
-                self.debug_info.append("🔗 Using Instagram cookies - optimal setup!")
-            
+        # Use config file if provided (contains site-specific credentials)
+        if self.config_path:
+            command += ["--config", self.config_path]
+            self.debug_info.append(f"📄 Using config file: {self.config_path}")
+
+        # Handle authentication: Browser cookies toggle vs cookie file
+        # When use_browser_cookies is TRUE: use browser cookies (even if cookie file exists)
+        # When use_browser_cookies is FALSE: use cookie file if provided
+        if self.use_browser_cookies:
+            # User explicitly wants browser cookies
+            command += ["--cookies-from-browser", self.browser_name]
+            self.debug_info.append(f"🍪 Using cookies from {self.browser_name} browser (toggle enabled)")
+            if self.cookie_file:
+                self.debug_info.append(f"   ℹ️ Note: Cookie file '{self.cookie_file}' ignored - browser cookies selected")
+            # Test if browser cookies can be accessed
+            self._test_browser_cookie_access()
+        elif self.cookie_file:
+            # Use cookie file when browser cookies toggle is off
             converted_cookie_file = self._convert_cookie_file()
             if converted_cookie_file:
                 command += ["--cookies", converted_cookie_file]
                 self.debug_info.append(f"🍪 Using cookie file: {converted_cookie_file}")
-        elif self.use_browser_cookies:
-            command += ["--cookies-from-browser", self.browser_name]
-            self.debug_info.append(f"🍪 Extracting cookies from {self.browser_name} browser")
-            # Test if browser cookies can be accessed
-            self._test_browser_cookie_access()
+                if 'instagram' in target_sites:
+                    self.debug_info.append("🔗 Instagram + cookie file - optimal setup!")
 
         if self.use_download_archive:
             command += ["--download-archive", self.archive_file]
@@ -158,6 +203,39 @@ class GalleryDLDownloader:
                 "extension not in ('mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'm4v')",
             ]
             self.debug_info.append("🎬 Video files will be skipped")
+
+        # Add minimum resolution filter for images if enabled
+        if self.filter_by_resolution and (self.min_image_width > 0 or self.min_image_height > 0):
+            # gallery-dl filter expression for minimum resolution
+            # IMPORTANT: Not all extractors provide width/height metadata (e.g., Bunkr, Cyberdrop)
+            # gallery-dl uses eval() with metadata as locals(), so we can use locals().get()
+            # If width/height don't exist, we default to 99999 so the file passes the filter
+            # (download files with unknown dimensions rather than skip them)
+            filter_expr = []
+            if self.min_image_width > 0:
+                # If width is not available in metadata, default to 99999 (pass filter)
+                filter_expr.append(f"locals().get('width', 99999) >= {self.min_image_width}")
+            if self.min_image_height > 0:
+                # If height is not available in metadata, default to 99999 (pass filter)
+                filter_expr.append(f"locals().get('height', 99999) >= {self.min_image_height}")
+            
+            # Combine with video filter if needed, or apply image filter
+            # Note: gallery-dl only allows one --filter, so we need to combine
+            if self.skip_videos:
+                # Already added video filter above, need to modify it
+                # Remove the last filter we added and combine
+                command = [c for c in command if c != "--filter"]
+                command = [c for c in command if "extension not in" not in c]
+                combined_filter = f"(extension not in ('mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'm4v')) and ({' and '.join(filter_expr)})"
+                command += ["--filter", combined_filter]
+            else:
+                # Only filter images by resolution (videos pass through)
+                # Apply filter only to images, let videos through
+                # Also pass through if width/height are not available (unknown dimensions)
+                filter_condition = f"(extension in ('mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'm4v')) or ({' and '.join(filter_expr)})"
+                command += ["--filter", filter_condition]
+            
+            self.debug_info.append(f"📐 Minimum resolution filter: {self.min_image_width}x{self.min_image_height}px (files with unknown dimensions will be downloaded)")
 
         # Add rate limiting to be respectful to servers (use correct format)
         command += ["--sleep", "1.0"]
@@ -440,15 +518,15 @@ class GalleryDLDownloader:
                 universal_newlines=True,
                 cwd=self.output_dir,  # Set working directory
             )
-            stdout, stderr = process.communicate(timeout=300)  # 5 minute timeout
+            stdout, stderr = process.communicate(timeout=self.download_timeout)  # Use configurable timeout
             process_returncode = process.returncode
         except subprocess.TimeoutExpired:
             process.kill()
             process_success = False
             process_returncode = -1
-            stderr = "Download process timed out after 5 minutes"
+            stderr = f"Download process timed out after {self.download_timeout // 60} minutes"
             stdout = ""
-            self.debug_info.append("⏰ Download timed out, but continuing with file organization...")
+            self.debug_info.append(f"⏰ Download timed out after {self.download_timeout}s, but continuing with file organization...")
         except Exception as e:
             process_success = False
             process_returncode = -1
@@ -671,65 +749,108 @@ class GalleryDLNode:
 
     @classmethod
     def INPUT_TYPES(cls) -> Dict[str, Any]:
+        # Load saved config paths from persistent settings
+        saved_config_path = get_persistent_setting("gallery_dl", "config_path", "")
+        saved_cookie_file = get_persistent_setting("gallery_dl", "cookie_file", "")
+        
         return {
             "required": {
                 "url_list": ("STRING", {
                     "multiline": True,
-                    "default": "# Enter URLs here, one per line\n# Example:\n# https://imgur.com/gallery/example\n# https://example.com/image.jpg"
+                    "default": "# Enter URLs here, one per line\n# Supports 100+ sites: Instagram, Reddit, Twitter/X, DeviantArt, Pixiv, 500px, Flickr, Pinterest, Bluesky, and more\n# Examples:\n# https://www.instagram.com/username/\n# https://www.reddit.com/r/subreddit/\n# https://twitter.com/username",
+                    "tooltip": "Enter URLs to download from, one per line. Supports Instagram, Reddit, Twitter/X, DeviantArt, Pixiv, 500px, Flickr, Pinterest, Bluesky, and 90+ other sites. Lines starting with # are ignored."
                 }),
                 "output_dir": ("STRING", {
                     "default": "./gallery-dl-output",
-                    "tooltip": "Directory where downloaded files will be saved"
+                    "tooltip": "Directory where downloaded files will be saved. Relative paths are relative to ComfyUI's output folder. Files are organized into subfolders by site and user."
                 })
             },
             "optional": {
                 "url_file": ("STRING", {
                     "default": "",
-                    "tooltip": "Path to a text file containing URLs (one per line)"
+                    "tooltip": "Optional: Path to a text file containing URLs (one per line). Useful for batch downloading from a prepared list. Leave empty to use url_list above."
                 }),
                 "config_path": ("STRING", {
-                    "default": "",
-                    "tooltip": "Path to gallery-dl config file. For Instagram: use './configs/gallery-dl.conf' (has cookies). For Reddit: use './configs/gallery-dl-no-reddit.conf' or add API credentials to gallery-dl.conf."
+                    "default": saved_config_path,
+                    "tooltip": "Path to gallery-dl.conf config file. This single file contains credentials for ALL sites (Instagram, Reddit, 500px, etc.) - gallery-dl auto-selects the right ones based on URL. Path is auto-saved for next time. Recommended: ./configs/gallery-dl.conf"
                 }),
                 "cookie_file": ("STRING", {
-                    "default": "",
-                    "tooltip": "Path to exported cookie JSON file. For Instagram: use './configs/instagram_cookies.json'. For Reddit: LEAVE EMPTY (use browser cookies instead)."
+                    "default": saved_cookie_file,
+                    "tooltip": "Path to exported cookie file (Netscape/JSON format). Only used when 'Use Browser Cookies' is OFF and you need site-specific cookies not in config. Usually leave empty - config file credentials work better. Path is auto-saved."
                 }),
                 "use_browser_cookies": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Use browser cookies for authentication (ignored if cookie file is provided)"
+                    "default": False,
+                    "label_on": "Browser Cookies",
+                    "label_off": "Config/Cookie File",
+                    "tooltip": "OFF (recommended): Use credentials from config file - most reliable. ON: Extract cookies directly from browser (Firefox works best; Chrome/Edge require admin rights and browser closed)."
                 }),
                 "browser_name": (["firefox", "chrome", "chromium", "edge", "safari", "opera"], {
                     "default": "firefox",
-                    "tooltip": "Browser to extract cookies from. Firefox works without admin. Chrome/Edge require admin AND browser closed. Recommended: use config file with cookies instead."
+                    "tooltip": "Browser to extract cookies from when 'Use Browser Cookies' is ON. Firefox recommended - works without admin rights. Chrome/Edge need admin + browser closed."
                 }),
                 "use_download_archive": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "Use archive file to skip already downloaded content"
+                    "label_on": "Skip Downloaded",
+                    "label_off": "Re-download All",
+                    "tooltip": "ON (recommended): Track downloaded files in SQLite database to skip duplicates on future runs. OFF: Re-download everything, may create duplicates."
                 }),
                 "archive_file": ("STRING", {
                     "default": "./gallery-dl-archive.sqlite3",
-                    "tooltip": "Path to the download archive database"
+                    "tooltip": "Path to download archive database (SQLite). Tracks what's been downloaded to avoid duplicates. Delete this file to force re-downloading everything."
                 }),
                 "skip_videos": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "Skip video files, download only images"
+                    "label_on": "Images Only",
+                    "label_off": "Images + Videos",
+                    "tooltip": "ON: Download only images, skip all video files. OFF: Download both images and videos. Useful when you only want still images from a mixed gallery."
+                }),
+                "filter_by_resolution": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "Filter Small Images",
+                    "label_off": "Keep All Sizes",
+                    "tooltip": "ON: Skip images smaller than min_image_width/height (removes thumbnails, icons, low-res images). Videos are never filtered. Sites without dimension metadata (Bunkr, Cyberdrop) will download all images. OFF: Download all images regardless of size."
+                }),
+                "min_image_width": ("INT", {
+                    "default": 768,
+                    "min": 0,
+                    "max": 8192,
+                    "step": 64,
+                    "tooltip": "Minimum image width in pixels when filter_by_resolution is ON. Images narrower than this are skipped. Set to 0 to disable width filtering. Note: Sites that don't provide dimension metadata will download all images."
+                }),
+                "min_image_height": ("INT", {
+                    "default": 768,
+                    "min": 0,
+                    "max": 8192,
+                    "step": 64,
+                    "tooltip": "Minimum image height in pixels when filter_by_resolution is ON. Images shorter than this are skipped. Set to 0 to disable height filtering. Note: Sites that don't provide dimension metadata will download all images."
                 }),
                 "extract_metadata": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "Save download metadata to JSON file"
+                    "label_on": "Save Metadata",
+                    "label_off": "No Metadata",
+                    "tooltip": "ON: Save download metadata to JSON file (URLs, timestamps, file counts, errors). Useful for tracking what was downloaded. OFF: No metadata file created."
                 }),
                 "organize_files": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "Sort downloaded files into subfolders (images/, videos/, audio/, other/)"
+                    "label_on": "Sort by Type",
+                    "label_off": "All in One Folder",
+                    "tooltip": "ON: Sort downloaded files into subfolders by type (images/, videos/, audio/, other/). OFF: Put all files in the main output folder without sorting."
                 }),
                 "instagram_include": (["posts", "stories", "highlights", "reels", "tagged", "info", "avatar", "all", "posts,stories", "posts,reels", "stories,highlights"], {
                     "default": "posts",
-                    "tooltip": "For Instagram profiles: What to include (posts, stories, highlights, reels, tagged, info, avatar, or all)"
+                    "tooltip": "Instagram only: What content to download. 'posts' = feed posts, 'stories' = current stories (24hr), 'highlights' = saved story highlights, 'reels' = reels videos, 'all' = everything. Combine with comma: 'posts,reels'."
+                }),
+                "download_timeout": ("INT", {
+                    "default": 600,
+                    "min": 60,
+                    "max": 3600,
+                    "step": 60,
+                    "tooltip": "Maximum time in seconds to wait for downloads to complete. Default 600s (10 min). Increase for large galleries - Instagram profiles with 1000+ posts may need 1800-3600s (30-60 min)."
                 }),
                 "extra_options": ("STRING", {
                     "default": "",
-                    "tooltip": "Additional options for gallery-dl (e.g., '--no-skip-download')"
+                    "multiline": True,
+                    "tooltip": "Advanced gallery-dl options (one per line or space-separated):\n• --limit N: Max N files to download\n• --range 1-50: Download items 1-50 only\n• --no-download: Simulate without downloading\n• --write-metadata: Save per-file JSON metadata\n• --ugoira-conv: Convert Pixiv ugoira to video\n• -v: Verbose output for debugging\n• --sleep N: Wait N seconds between requests\n• --retries N: Retry failed downloads N times\nSee gallery-dl docs: https://github.com/mikf/gallery-dl/blob/master/docs/options.md"
                 })
             }
         }
@@ -739,7 +860,7 @@ class GalleryDLNode:
     FUNCTION = "execute"
     CATEGORY = "Downloaders"
 
-    DESCRIPTION = "Download images and media from various websites using gallery-dl"
+    DESCRIPTION = "Download images and media from 100+ websites using gallery-dl. Supports Instagram, Reddit, Twitter/X, DeviantArt, Pixiv, 500px, Flickr, Pinterest, Bluesky, and more. Features: resolution filtering, duplicate detection, automatic file organization, and persistent config paths."
 
     def execute(
         self,
@@ -753,10 +874,14 @@ class GalleryDLNode:
         use_download_archive: bool = True,
         archive_file: str = "./gallery-dl-archive.sqlite3",
         skip_videos: bool = False,
+        filter_by_resolution: bool = True,
+        min_image_width: int = 768,
+        min_image_height: int = 768,
         extract_metadata: bool = True,
         organize_files: bool = True,
         # New advanced options
         instagram_include: str = "posts",
+        download_timeout: int = 600,
         extra_options: str = "",
     ) -> Tuple[str, str, int, bool]:
         """
@@ -766,6 +891,10 @@ class GalleryDLNode:
             tuple: (output_dir, summary, download_count, success)
         """
         try:
+            # Save original config values for persistence before cleaning
+            original_config_path = config_path.strip() if config_path else ""
+            original_cookie_file = cookie_file.strip() if cookie_file else ""
+            
             # Clean up input parameters  
             if url_file and url_file.strip() == "":
                 url_file = None
@@ -775,6 +904,14 @@ class GalleryDLNode:
                 cookie_file = None
             if archive_file and archive_file.strip() == "":
                 archive_file = "./gallery-dl-archive.sqlite3"
+            
+            # Save config_path and cookie_file for future use if they were provided
+            if original_config_path:
+                set_persistent_setting("gallery_dl", "config_path", original_config_path)
+                print(f"Saved config_path for future use: {original_config_path}")
+            if original_cookie_file:
+                set_persistent_setting("gallery_dl", "cookie_file", original_cookie_file)
+                print(f"Saved cookie_file for future use: {original_cookie_file}")
 
             # Sanitize output directory
             base_output_dir = os.path.abspath(folder_paths.get_output_directory())
@@ -829,9 +966,13 @@ class GalleryDLNode:
                 use_download_archive=use_download_archive,
                 archive_file=archive_file,
                 skip_videos=skip_videos,
+                filter_by_resolution=filter_by_resolution,
+                min_image_width=min_image_width,
+                min_image_height=min_image_height,
                 extract_metadata=extract_metadata,
                 organize_files=organize_files,
                 instagram_include=instagram_include,
+                download_timeout=download_timeout,
                 extra_options=extra_options,
             )
 

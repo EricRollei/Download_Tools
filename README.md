@@ -6,9 +6,12 @@ ComfyUI custom nodes for downloading media from 1000+ websites including Instagr
 
 - **Gallery-dl Node** - Download images and videos from 100+ websites
   - Instagram, Reddit, Twitter/X, DeviantArt, Pixiv, and more
-  - Supports authentication via browser cookies
+  - **Resolution filtering** - Skip small images (default: 768px minimum)
+  - Supports authentication via config file or browser cookies
   - Automatic file organization
   - Download archive to avoid duplicates
+  - **Persistent config paths** - Paths are remembered between sessions
+  - **Configurable timeout** - Up to 1 hour for large downloads
 
 - **Yt-dlp Node** - Download videos and audio from 1000+ platforms
   - YouTube, TikTok, Vimeo, Twitch, and more
@@ -55,9 +58,11 @@ ComfyUI custom nodes for downloading media from 1000+ websites including Instagr
 1. Add "Gallery-dl Downloader" node to your workflow
 2. Enter a URL (e.g., Instagram profile, Reddit post)
 3. Configure options:
-   - Enable `use_browser_cookies` for private content
+   - Set `config_path` to `./configs/gallery-dl.conf` (auto-saved for next time)
+   - Enable `filter_by_resolution` to skip small images (768px default)
    - Enable `organize_files` to sort by type
    - Enable `use_download_archive` to avoid duplicates
+   - Increase `download_timeout` for large galleries (default: 600s)
 4. Execute!
 
 **Supported Sites:** Instagram, Reddit, Twitter, DeviantArt, Pixiv, Tumblr, Pinterest, Flickr, and 90+ more. See [gallery-dl supported sites](https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md).
@@ -82,9 +87,15 @@ ComfyUI custom nodes for downloading media from 1000+ websites including Instagr
 
 | Setting | Value | Notes |
 |---------|-------|-------|
-| `config_path` | `./configs/gallery-dl.conf` | Contains your Instagram cookies |
+| `config_path` | `./configs/gallery-dl.conf` | Contains all site credentials (auto-saved) |
 | `cookie_file` | *(leave empty)* | Cookies are in config file |
-| `use_browser_cookies` | ❌ False | Browser cookies require admin access |
+| `use_browser_cookies` | ❌ False | Config file is more reliable |
+| `filter_by_resolution` | ✅ True | Skip thumbnails and small images |
+| `min_image_width/height` | 768 | Minimum resolution in pixels |
+
+### One Config For All Sites
+
+The `gallery-dl.conf` file contains credentials for **all supported sites** (Instagram, Reddit, 500px, DeviantArt, Pinterest, Flickr, Bluesky). Gallery-dl automatically uses the right credentials based on the URL you're downloading from.
 
 ### Why Not Browser Cookies?
 
@@ -138,13 +149,15 @@ Many sites require authentication for private content:
 
 Config files are stored in `download-tools/configs/`:
 
-- `gallery-dl.conf` - Gallery-dl settings
-- `gallery-dl-browser-cookies.conf` - Browser cookie configuration
+- `gallery-dl.conf` - **Main config** with credentials for all sites (Instagram, Reddit, 500px, DeviantArt, Pinterest, Flickr, Bluesky)
+- `gallery-dl.conf.example` - Template for creating your own config
 - `yt-dlp.conf` - Yt-dlp default settings
 - `yt-dlp-audio.conf` - Audio extraction preset
 - `yt-dlp-hq.conf` - High quality preset
 
-You can create custom config files and reference them in the nodes.
+### Persistent Paths
+
+Config file paths are **automatically saved** between ComfyUI sessions. Once you set `config_path` or `cookie_file`, they'll be remembered for next time.
 
 ## 📚 Documentation
 
@@ -172,6 +185,17 @@ Authentication required:
 - Use `config_path: ./configs/gallery-dl.conf` with cookies
 - Or enable `use_browser_cookies` with Firefox
 - 401 Unauthorized = expired cookies, export fresh ones
+
+### "Downloads timing out"
+For large galleries:
+- Increase `download_timeout` (default: 600s, max: 3600s = 1 hour)
+- Large Instagram profiles may need the full hour
+
+### "Too many small images"
+Enable resolution filtering:
+- Set `filter_by_resolution` to True
+- Adjust `min_image_width` and `min_image_height` (default: 768px)
+- Videos are never filtered, only images
 
 ### "CUDA out of memory" / "FFmpeg not found"
 For audio extraction:

@@ -123,14 +123,18 @@ class RedditHandler(BaseSiteHandler):
         self._extract_identifiers_from_url()
 
         # --- Load API credentials ---
-        # self._load_api_credentials()  remove as main code has not loaded confgig yet
+        # Credentials will be loaded lazily in prefers_api() when the scraper's auth_config is available
 
 
     def prefers_api(self) -> bool:
         """Reddit handler prefers API if credentials were loaded."""
+        # Ensure credentials are loaded from scraper's auth_config if not already done
+        if not self.api_available and self.scraper:
+            self._load_api_credentials()
+        
         # Check if the necessary attributes exist AND have truthy values
         has_creds = bool(self.client_id and self.client_secret)
-        print(f"RedditHandler prefers_api check. Result: {has_creds}")
+        print(f"RedditHandler prefers_api check. Result: {has_creds} (api_available={self.api_available})")
         return has_creds
 
     async def extract_api_data_async(self, **kwargs) -> list:
@@ -316,7 +320,24 @@ class RedditHandler(BaseSiteHandler):
             # Check if it's a self post (text post)
             if not submission.is_self and hasattr(submission, 'url'):
                 url = submission.url
-                if self._is_image_url(url):
+                
+                # Check if this is an external video host that needs resolution
+                if self._is_external_video_host(url):
+                    resolved = await self._resolve_external_video_url(url)
+                    if resolved:
+                        media_items.append({
+                            'url': resolved['url'],
+                            'alt': post_title,
+                            'title': resolved.get('title') or meta_title,
+                            'source_url': post_url,
+                            'credits': credit_line,
+                            'type': 'video',
+                            'width': resolved.get('width', 0),
+                            'height': resolved.get('height', 0),
+                            'duration': resolved.get('duration'),
+                            '_headers': {'Referer': url}  # Use original URL as referer
+                        })
+                elif self._is_image_url(url):
                     media_items.append({
                         'url': url,
                         'alt': post_title,
@@ -327,15 +348,29 @@ class RedditHandler(BaseSiteHandler):
                         '_headers': {'Referer': post_url}
                     })
                 elif self._is_video_url(url):
-                    media_items.append({
-                        'url': url,
-                        'alt': post_title,
-                        'title': meta_title,
-                        'source_url': post_url,
-                        'credits': credit_line,
-                        'type': 'video',
-                        '_headers': {'Referer': post_url}
-                    })
+                    # For v.redd.it links, they usually need special handling too
+                    if 'v.redd.it' in url:
+                        resolved = await self._resolve_external_video_url(url)
+                        if resolved:
+                            media_items.append({
+                                'url': resolved['url'],
+                                'alt': post_title,
+                                'title': meta_title,
+                                'source_url': post_url,
+                                'credits': credit_line,
+                                'type': 'video',
+                                '_headers': {'Referer': post_url}
+                            })
+                    else:
+                        media_items.append({
+                            'url': url,
+                            'alt': post_title,
+                            'title': meta_title,
+                            'source_url': post_url,
+                            'credits': credit_line,
+                            'type': 'video',
+                            '_headers': {'Referer': post_url}
+                        })
 
             # Handle Reddit-hosted videos
             if submission.is_video and submission.media and 'reddit_video' in submission.media:
@@ -501,6 +536,71 @@ class RedditHandler(BaseSiteHandler):
             return True
             
         return False
+
+    def _is_external_video_host(self, url: str) -> bool:
+        """Check if URL is from an external video host that needs resolution."""
+        external_hosts = ['redgifs.com', 'gfycat.com', 'imgur.com/a/', 'imgur.com/gallery/']
+        return any(host in url.lower() for host in external_hosts)
+
+    async def _resolve_external_video_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """
+        Resolve external video host URLs (RedGifs, Gfycat, Imgur) to direct video URLs.
+        Uses yt-dlp as it has excellent support for these sites.
+        
+        Returns:
+            Dict with 'url' and 'type' keys, or None if resolution fails
+        """
+        import subprocess
+        import tempfile
+        
+        try:
+            print(f"RedditHandler: Resolving external video URL: {url}")
+            
+            # Use yt-dlp to extract video info
+            result = subprocess.run(
+                ['yt-dlp', '--dump-json', '--no-download', url],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0 and result.stdout:
+                info = json.loads(result.stdout)
+                
+                # Get the best video URL
+                video_url = info.get('url')
+                if not video_url:
+                    # Try to get from formats
+                    formats = info.get('formats', [])
+                    if formats:
+                        # Prefer mp4, then webm
+                        for fmt in reversed(formats):
+                            if fmt.get('ext') == 'mp4' and fmt.get('url'):
+                                video_url = fmt['url']
+                                break
+                        if not video_url:
+                            video_url = formats[-1].get('url')
+                
+                if video_url:
+                    print(f"RedditHandler: Resolved to: {video_url[:80]}...")
+                    return {
+                        'url': video_url,
+                        'type': 'video',
+                        'ext': info.get('ext', 'mp4'),
+                        'title': info.get('title', ''),
+                        'duration': info.get('duration'),
+                        'width': info.get('width'),
+                        'height': info.get('height')
+                    }
+            else:
+                print(f"RedditHandler: yt-dlp failed for {url}: {result.stderr[:200] if result.stderr else 'no error'}")
+                
+        except subprocess.TimeoutExpired:
+            print(f"RedditHandler: Timeout resolving {url}")
+        except Exception as e:
+            print(f"RedditHandler: Error resolving external video: {e}")
+        
+        return None
 
     async def _extract_media_from_dom_async(self, page: AsyncPage, **kwargs) -> list:
         """Extract media from DOM using async Playwright"""

@@ -38,6 +38,16 @@
       "domain": "example.com",
       "username": "YOUR_USERNAME",
       "password": "YOUR_PASSWORD"
+    },
+    "modelmayhem.com": {
+      "auth_type": "form",
+      "domain": "modelmayhem.com",
+      "username": "YOUR_EMAIL",
+      "password": "YOUR_PASSWORD",
+      "timeout": 30000,
+      "scroll_delay_ms": 1500,
+      "max_scroll_count": 15,
+      "note": "Login credentials for ModelMayhem portfolio access"
     }
   }
 }

@@ -118,6 +118,7 @@ configs/auth_config.json
 configs/gallery-dl.conf
 configs/gallery-dl-*.conf
 configs/web_scraper/auth_config.json
+configs/node_settings.json
 *.secret
 *.key
 

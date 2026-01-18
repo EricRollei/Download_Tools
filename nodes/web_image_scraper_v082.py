@@ -97,6 +97,27 @@ except ImportError:
 import pathlib
 
 
+# Import persistent settings manager
+try:
+    from ..utils.persistent_settings import get_persistent_setting, set_persistent_setting
+    PERSISTENT_SETTINGS_AVAILABLE = True
+except ImportError:
+    try:
+        import sys
+        utils_dir = os.path.dirname(os.path.dirname(__file__))
+        if utils_dir not in sys.path:
+            sys.path.insert(0, utils_dir)
+        from utils.persistent_settings import get_persistent_setting, set_persistent_setting
+        PERSISTENT_SETTINGS_AVAILABLE = True
+    except ImportError:
+        PERSISTENT_SETTINGS_AVAILABLE = False
+        def get_persistent_setting(node_type, key, default=""):
+            return default
+        def set_persistent_setting(node_type, key, value):
+            return False
+        print("Warning: persistent_settings not available. Config paths will not persist.")
+
+
 # Direct Playwright support
 try:
     import playwright
@@ -292,8 +313,15 @@ def load_site_handlers():
             elif handler_class.__name__ == "YouTubeHandler":
                 return 5
             # Give site-specific handlers higher priority
-            elif handler_class.__name__ in ["RedditHandler", "BskyHandler", "FlickrHandler", "ArtsyHandler"]:
+            elif handler_class.__name__ in ["RedditHandler", "BskyHandler", "FlickrHandler", "ArtsyHandler", "ModelMayhemHandler"]:
                 return 10
+            # Give WixHandler high priority (Wix-powered sites need special handling)
+            elif handler_class.__name__ == "WixHandler":
+                return 15
+            # Give PortfolioHandler medium-high priority (handles generic portfolio sites)
+            # Note: PortfolioHandler must be lower priority than site-specific handlers like ModelMayhemHandler
+            elif handler_class.__name__ == "PortfolioHandler":
+                return 50
             # Default priority
             return 100
             
@@ -326,6 +354,9 @@ class EricWebFileScraper:
     def INPUT_TYPES(cls):
         # Define common hash algorithms based on availability
         hash_algos = ["average_hash", "phash", "dhash", "whash"] if IMAGEHASH_AVAILABLE else ["none"]
+        
+        # Load saved auth_config_path from persistent settings
+        saved_auth_config = get_persistent_setting("web_scraper", "auth_config_path", "")
 
         return {
             "required": {
@@ -359,7 +390,7 @@ class EricWebFileScraper:
                 "crawl_subfolders": ("BOOLEAN", {"default": True, "label_on": "Subfolder Per Page", "label_off": "Single Folder"}),
                 "skip_first_page_download": ("BOOLEAN", {"default": False, "label_on": "Skip Listing Page", "label_off": "Download All Pages"}),
                 "link_include_pattern": ("STRING", {"default": "", "multiline": False, "placeholder": "Regex to match links (e.g. /[A-Z][a-z]+_)"}),
-                "link_exclude_pattern": ("STRING", {"default": "/production|/men|/women|/direct|/newface|/contacts|/about|/policy|/store|international", "multiline": False, "placeholder": "Regex to exclude links"}),
+                "link_exclude_pattern": ("STRING", {"default": "", "multiline": False, "placeholder": "Regex: /contact|/news|/about"}),
                 
                 # --- Media Types ---
                 "download_audio": ("BOOLEAN", {"default": False, "label_on": "Extract Audio", "label_off": "Skip Audio"}),
@@ -382,7 +413,7 @@ class EricWebFileScraper:
                 "scroll_delay_ms": ("INT", {"default": 1000, "min": 50, "max": 5000, "step": 50, "display": "Scroll Delay (ms)"}),
                 # --- Interactions & Auth ---
                 "interaction_sequence": ("STRING", {"multiline": True, "placeholder": '[{"type": "click", "selector": "#button"}, ...]', "display": "Interaction Sequence (JSON)"}),
-                "auth_config_path": ("STRING", {"default": "", "placeholder": "Path to auth_config.json"}),
+                "auth_config_path": ("STRING", {"default": saved_auth_config, "placeholder": "Path to auth_config.json (saved for future use)"}),
                 "save_cookies": ("BOOLEAN", {"default": False, "label_on": "Save Cookies", "label_off": "Don't Save Cookies"}),
                 # --- Screenshots & Debug ---
                 "take_screenshot": ("BOOLEAN", {"default": False, "label_on": "Take Screenshot", "label_off": "No Screenshot"}),
@@ -987,6 +1018,11 @@ class EricWebFileScraper:
             return ("", "", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, json.dumps(stats))
 
         self.auth_config = self.load_auth_config(auth_config_path)
+        
+        # Save auth_config_path for future use if it was provided
+        if auth_config_path and auth_config_path.strip():
+            set_persistent_setting("web_scraper", "auth_config_path", auth_config_path)
+            print(f"Saved auth_config_path for future use: {auth_config_path}")
 
         handler_instance = self._get_handler_for_url(url)
         if handler_instance:
@@ -2315,7 +2351,8 @@ class EricWebFileScraper:
                     cdn_domains = [
                         'tildacdn.com', 'cloudfront.net', 'cloudflare.com', 
                         'akamaihd.net', 'fastly.net', 'imgix.net', 'twimg.com',
-                        'cdninstagram.com', 'googleapis.com', 'gstatic.com'
+                        'cdninstagram.com', 'googleapis.com', 'gstatic.com',
+                        'photos.modelmayhem.com', 'assets.modelmayhem.com'  # ModelMayhem CDN domains
                     ]
                     is_trusted_cdn = any(cdn in item_domain.lower() for cdn in cdn_domains)
                     if is_trusted_cdn:
@@ -2591,12 +2628,51 @@ class EricWebFileScraper:
             if is_video and not download_videos: reason = "Video download disabled"
             return None, None, None, None, None, f"Skipped ({reason}): {url}"
 
+        # Get item dict for additional metadata (page_url, qualities, etc.)
+        item = url_or_dict if isinstance(url_or_dict, dict) else {}
+
         try:
             print(f"  Downloading {file_type}: {url}")
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            
+            # Add Referer header for Wix videos (required to avoid 403)
+            page_url = item.get('page_url', '')
+            if 'wixstatic.com' in url:
+                if page_url:
+                    headers['Referer'] = page_url
+                    headers['Origin'] = '/'.join(page_url.split('/')[:3])  # Extract origin
+                else:
+                    # Try to construct a reasonable referer from the URL
+                    headers['Referer'] = 'https://www.wix.com/'
+            
             response = requests.get(url, stream=True, timeout=30, headers=headers)
             
-            if response.status_code != 200:
+            # Handle Wix video 403 errors with quality fallback
+            if response.status_code == 403 and 'video.wixstatic.com' in url:
+                qualities = item.get('qualities', {})
+                original_url = item.get('original_url', '')
+                
+                # Try fallback qualities: 720p, 480p, then original
+                fallback_urls = []
+                if qualities:
+                    for q in ['720p', '480p', '360p']:
+                        if q in qualities and qualities[q] != url:
+                            fallback_urls.append((q, qualities[q]))
+                if original_url and original_url != url:
+                    fallback_urls.append(('original', original_url))
+                
+                for quality, fallback_url in fallback_urls:
+                    print(f"  Trying {quality} fallback: {fallback_url}")
+                    response = requests.get(fallback_url, stream=True, timeout=30, headers=headers)
+                    if response.status_code == 200:
+                        url = fallback_url  # Update URL for filename generation
+                        print(f"  Success with {quality} quality")
+                        break
+                else:
+                    # All fallbacks failed
+                    print(f"HTTP error {response.status_code} for {url} (all quality fallbacks failed)")
+                    return None, None, None, None, None, f"HTTP error {response.status_code}"
+            elif response.status_code != 200:
                 print(f"HTTP error {response.status_code} for {url}")
                 return None, None, None, None, None, f"HTTP error {response.status_code}"
             
@@ -3857,7 +3933,8 @@ class EricWebFileScraper:
                 # Fallback: check common CDN domains directly (handles items from DevTools cache)
                 if not is_trusted_cdn:
                     cdn_domains = ['tildacdn.com', 'cloudfront.net', 'cloudflare.com', 'akamaized.net', 
-                                   'fastly.net', 'cdn.', 'assets.', 'static.', 'media.', 'images.']
+                                   'fastly.net', 'cdn.', 'assets.', 'static.', 'media.', 'images.',
+                                   'photos.modelmayhem.com', 'assets.modelmayhem.com']  # ModelMayhem CDN
                     is_trusted_cdn = any(cdn in item_domain.lower() for cdn in cdn_domains)
                     if is_trusted_cdn:
                         with global_lock:

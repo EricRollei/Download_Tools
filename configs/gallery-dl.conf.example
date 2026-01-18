@@ -9,7 +9,21 @@
       "client-secret": "YOUR_REDDIT_CLIENT_SECRET",
       "user-agent": "MediaTool (by /u/YOUR_USERNAME)",
       "username": "YOUR_REDDIT_USERNAME",
-      "password": "YOUR_REDDIT_PASSWORD"
+      "password": "YOUR_REDDIT_PASSWORD",
+      "comments": 0,
+      "videos": true
+    },
+    
+    "redgifs": {
+      "format": ["hd", "sd", "gif"]
+    },
+    
+    "gfycat": {
+      "format": ["mp4", "webm", "gif"]
+    },
+    
+    "imgur": {
+      "mp4": true
     },
     
     "500px": {

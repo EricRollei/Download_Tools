@@ -1,8 +1,9 @@
 # Download Tools - Requirements
 # ComfyUI custom nodes for media downloading
+# Author: Eric Hiss (GitHub: EricRollei)
 
 # ============================================================================
-# DOWNLOADER TOOLS (Required)
+# DOWNLOADER TOOLS (Required for gallery-dl and yt-dlp nodes)
 # ============================================================================
 
 # Gallery-dl for downloading from various websites
@@ -11,24 +12,43 @@ gallery-dl>=1.26.0
 # Yt-dlp for video/audio downloading
 yt-dlp>=2023.12.0
 
-# Browser cookie support (for authentication)
+# Browser cookie support (for authentication with gallery-dl/yt-dlp)
 browser-cookie3>=0.19.0
 
 # ============================================================================
-# WEB SCRAPER (Required for web_image_scraper node)
+# WEB SCRAPER - Core Dependencies (Required for web_image_scraper node)
 # ============================================================================
 
-# Playwright for browser automation
+# Playwright for browser automation (run 'playwright install' after pip install)
 playwright>=1.40.0
 
-# Scrapling for enhanced web scraping
+# Scrapling for enhanced web scraping with anti-bot detection
 scrapling>=0.2.0
 
 # Image hashing for deduplication
 imagehash>=4.3.0
 
+# PIL/Pillow for image processing
+Pillow>=10.0.0
+
 # Async event loop nesting for ComfyUI compatibility
 nest-asyncio>=1.5.0
+
+# ============================================================================
+# WEB SCRAPER - Site-Specific API Libraries (Optional but recommended)
+# ============================================================================
+
+# AsyncPRAW for Reddit API access
+asyncpraw>=7.7.0
+
+# AT Protocol SDK for Bluesky
+atproto>=0.0.40
+
+# Instaloader for Instagram (optional, provides additional features)
+instaloader>=4.10.0
+
+# aiohttp for async HTTP requests (used by some handlers)
+aiohttp>=3.9.0
 
 # ============================================================================
 # CORE UTILITIES (Required)
@@ -46,25 +66,33 @@ colorama>=0.4.6
 jsonschema>=4.19.0
 
 # ============================================================================
-# NOTES
+# INSTALLATION NOTES
 # ============================================================================
 
-# 1. FFmpeg is required for yt-dlp audio extraction
+# 1. FFmpeg is required for yt-dlp audio extraction and video processing
 #    Download from: https://ffmpeg.org/download.html
 #    Or install via package manager:
 #    - Windows: choco install ffmpeg
 #    - macOS: brew install ffmpeg
 #    - Linux: apt-get install ffmpeg
 
-# 2. For gallery-dl authentication with private content:
-#    - Use browser cookies (automatic)
+# 2. After installing playwright, run: playwright install
+#    This downloads the browser binaries needed for web scraping.
+
+# 3. For gallery-dl authentication with private content:
+#    - Use browser cookies (automatic via browser-cookie3)
 #    - Or export cookies to configs/cookies.json
 
-# 3. For web_image_scraper node:
-#    - After installing playwright, run: playwright install
-#    - Configure authentication in configs/web_scraper/auth_config.json
-#    - See configs/web_scraper/README.md for auth setup guide
+# 4. For web_image_scraper node:
+#    - Configure authentication in configs/auth_config.json
+#    - See CONFIG_SETUP.md for auth setup guide
 
-# 4. These tools are installed system-wide and can be used from command line:
+# 5. Site-specific API setup:
+#    - Reddit: Create app at https://www.reddit.com/prefs/apps
+#      Add client_id, client_secret to auth_config.json
+#    - Bluesky: Add username/password to auth_config.json
+#    - Instagram: Add cookies or use browser session
+
+# 6. These tools can also be used from command line:
 #    - gallery-dl <url>
 #    - yt-dlp <url>
