@@ -97,7 +97,7 @@ class GalleryDLDownloader:
         min_image_height: int = 768,
         filter_by_resolution: bool = True,
         # Timeout settings
-        download_timeout: int = 600,
+        download_timeout: int = 1800,
     ):
         self.url_list = url_list or []
         self.url_file = url_file
@@ -318,7 +318,8 @@ class GalleryDLDownloader:
             return []
 
     def _organize_files_by_type(self, downloaded_files: List[str]) -> None:
-        """Sort downloaded files into subfolders by type (images, videos, etc.) within each profile directory"""
+        """Sort downloaded files into subfolders by type (images, videos, etc.) within each profile directory.
+        Only organizes files that are NOT already in images/, videos/, audio/, or other/ folders."""
         if not downloaded_files:
             self.debug_info.append("📂 No files to organize")
             return
@@ -329,12 +330,21 @@ class GalleryDLDownloader:
             video_extensions = {'.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.3gp', '.ogv', '.mpg', '.mpeg'}
             audio_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.opus'}
             
+            # Folders that indicate file is already organized - skip these
+            organized_folder_names = {'images', 'videos', 'audio', 'other'}
+            
             # Group files by their parent directory (profile/site directories)
             files_by_profile = {}
             
             for file_path in downloaded_files:
                 if not os.path.exists(file_path):
                     self.debug_info.append(f"⚠️ File no longer exists: {os.path.basename(file_path)}")
+                    continue
+                
+                # Skip files that are already in an organized folder
+                parent_folder = os.path.basename(os.path.dirname(file_path))
+                if parent_folder.lower() in organized_folder_names:
+                    self.debug_info.append(f"⏭️ Skipping already-organized: {os.path.basename(file_path)}")
                     continue
                     
                 # Skip files that shouldn't be organized
@@ -495,6 +505,8 @@ class GalleryDLDownloader:
         
         # Get list of files before download to track new files
         existing_files = set()
+        # Also track filenames in organized folders to avoid re-organizing
+        organized_folder_names = {'images', 'videos', 'audio', 'other'}
         if os.path.exists(self.output_dir):
             for root, dirs, files in os.walk(self.output_dir):
                 for file in files:
@@ -504,13 +516,27 @@ class GalleryDLDownloader:
         # Build and execute command
         command = self._build_command(urls)
 
-        # Execute download process with timeout handling
+        # Execute download process with timeout handling and real-time output
         process_success = True
         process_returncode = 0
-        stdout = ""
-        stderr = ""
+        stdout_lines = []
+        stderr_lines = []
+        
+        # Import ComfyUI's interrupt mechanism
+        try:
+            from comfy.model_management import processing_interrupted
+        except ImportError:
+            processing_interrupted = lambda: False
         
         try:
+            # Print command info for console logging
+            print(f"\n{'='*60}")
+            print(f"🚀 Gallery-dl Download Starting")
+            print(f"📥 URLs: {len(urls)}")
+            print(f"⏱️ Timeout: {self.download_timeout}s ({self.download_timeout // 60} min)")
+            print(f"🛑 To cancel: Press Cancel button in ComfyUI")
+            print(f"{'='*60}\n")
+            
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
@@ -518,27 +544,126 @@ class GalleryDLDownloader:
                 universal_newlines=True,
                 cwd=self.output_dir,  # Set working directory
             )
-            stdout, stderr = process.communicate(timeout=self.download_timeout)  # Use configurable timeout
-            process_returncode = process.returncode
+            
+            # Use threading to read output without blocking
+            import time
+            import threading
+            import queue
+            
+            output_queue = queue.Queue()
+            
+            def reader_thread(pipe, q):
+                try:
+                    for line in iter(pipe.readline, ''):
+                        q.put(line)
+                    pipe.close()
+                except:
+                    pass
+            
+            # Start reader thread
+            reader = threading.Thread(target=reader_thread, args=(process.stdout, output_queue))
+            reader.daemon = True
+            reader.start()
+            
+            start_time = time.time()
+            file_count = 0
+            cancelled = False
+            
+            while True:
+                # Check for ComfyUI cancel button FIRST
+                if processing_interrupted():
+                    process.kill()
+                    process.wait()
+                    cancelled = True
+                    process_success = False
+                    process_returncode = -2
+                    stderr_lines.append("Download cancelled by user")
+                    self.debug_info.append(f"🛑 Download cancelled by user after {file_count} files")
+                    print(f"\n🛑 CANCELLED by user - {file_count} files downloaded")
+                    print(f"💡 TIP: Run again to continue - already-downloaded files will be skipped!")
+                    break
+                
+                # Check timeout
+                elapsed = time.time() - start_time
+                if elapsed > self.download_timeout:
+                    process.kill()
+                    process.wait()
+                    process_success = False
+                    process_returncode = -1
+                    stderr_lines.append(f"Download process timed out after {self.download_timeout // 60} minutes")
+                    self.debug_info.append(f"⏰ Download timed out after {self.download_timeout}s ({file_count} files downloaded)")
+                    print(f"\n⏰ TIMEOUT after {elapsed:.0f}s - {file_count} files downloaded")
+                    print(f"💡 TIP: Run again to continue - already-downloaded files will be skipped automatically!")
+                    break
+                
+                # Check if process has finished
+                if process.poll() is not None:
+                    break
+                
+                # Read available output from queue (non-blocking)
+                try:
+                    while True:
+                        try:
+                            line = output_queue.get_nowait()
+                            if line:
+                                stdout_lines.append(line.rstrip())
+                                # Print progress to console
+                                if "# " in line or line.strip().endswith(('.jpg', '.png', '.gif', '.mp4', '.webp', '.webm')):
+                                    file_count += 1
+                                    # Print every 10 files or specific milestones
+                                    if file_count % 10 == 0 or file_count in [1, 5, 25, 50, 100]:
+                                        print(f"📥 Downloaded: {file_count} files ({elapsed:.0f}s elapsed)")
+                        except queue.Empty:
+                            break
+                except:
+                    pass
+                    
+                # Sleep 1 second between cancel checks to reduce CPU usage
+                time.sleep(1.0)
+            
+            # Get any remaining output
+            if not cancelled:
+                try:
+                    remaining_stdout, remaining_stderr = process.communicate(timeout=5)
+                    if remaining_stdout:
+                        stdout_lines.extend(remaining_stdout.splitlines())
+                    if remaining_stderr:
+                        stderr_lines.extend(remaining_stderr.splitlines())
+                except:
+                    pass
+            
+            process_returncode = process.returncode if process.returncode is not None else 0
+            
+            if not cancelled and process_returncode != -1:
+                print(f"\n{'='*60}")
+                print(f"✅ Download completed: {file_count} files in {time.time() - start_time:.0f}s")
+                print(f"{'='*60}\n")
+            
         except subprocess.TimeoutExpired:
             process.kill()
             process_success = False
             process_returncode = -1
-            stderr = f"Download process timed out after {self.download_timeout // 60} minutes"
-            stdout = ""
+            stderr_lines.append(f"Download process timed out after {self.download_timeout // 60} minutes")
             self.debug_info.append(f"⏰ Download timed out after {self.download_timeout}s, but continuing with file organization...")
         except Exception as e:
             process_success = False
             process_returncode = -1
-            stderr = f"Download process failed: {str(e)}"
-            stdout = ""
+            stderr_lines.append(f"Download process failed: {str(e)}")
             self.debug_info.append(f"❌ Download failed: {e}, but continuing with file organization...")
+        
+        stdout = "\n".join(stdout_lines)
+        stderr = "\n".join(stderr_lines)
 
         # Count only newly downloaded files (files that weren't there before)
         new_downloaded_files = []
         all_current_files = set()
         if os.path.exists(self.output_dir):
             for root, dirs, files in os.walk(self.output_dir):
+                # Skip scanning inside organized folders - those files are already handled
+                parent_folder = os.path.basename(root)
+                if parent_folder.lower() in organized_folder_names:
+                    continue
+                    
                 for file in files:
                     # Skip metadata, config, and cookie files more comprehensively
                     if file.endswith((".json", ".txt", ".log", ".tmp")) or file.startswith("tmp") or "cookie" in file.lower():
@@ -841,16 +966,22 @@ class GalleryDLNode:
                     "tooltip": "Instagram only: What content to download. 'posts' = feed posts, 'stories' = current stories (24hr), 'highlights' = saved story highlights, 'reels' = reels videos, 'all' = everything. Combine with comma: 'posts,reels'."
                 }),
                 "download_timeout": ("INT", {
-                    "default": 600,
+                    "default": 1800,
                     "min": 60,
-                    "max": 3600,
+                    "max": 36000,
                     "step": 60,
-                    "tooltip": "Maximum time in seconds to wait for downloads to complete. Default 600s (10 min). Increase for large galleries - Instagram profiles with 1000+ posts may need 1800-3600s (30-60 min)."
+                    "tooltip": "Maximum time in seconds for this run. Default 1800s (30 min). For huge galleries: 7200=2hr, 14400=4hr, 28800=8hr. TIP: If it times out, just run again - gallery-dl automatically resumes from where it left off using the download archive!"
                 }),
                 "extra_options": ("STRING", {
                     "default": "",
                     "multiline": True,
-                    "tooltip": "Advanced gallery-dl options (one per line or space-separated):\n• --limit N: Max N files to download\n• --range 1-50: Download items 1-50 only\n• --no-download: Simulate without downloading\n• --write-metadata: Save per-file JSON metadata\n• --ugoira-conv: Convert Pixiv ugoira to video\n• -v: Verbose output for debugging\n• --sleep N: Wait N seconds between requests\n• --retries N: Retry failed downloads N times\nSee gallery-dl docs: https://github.com/mikf/gallery-dl/blob/master/docs/options.md"
+                    "tooltip": "Advanced gallery-dl options (one per line or space-separated):\n• --limit N: Max N files to download\n• --range 1-50: Download items 1-50 only\n• --no-download: Simulate without downloading\n• --write-metadata: Save per-file JSON metadata\n• --ugoira-conv: Convert Pixiv ugoira to video\n• -v: Verbose output for debugging\n• --sleep N: Wait N seconds between requests\n• --retries N: Retry failed downloads N times\n\nFolder organization examples:\n• Kemono by post: -o directory=[\"{service}\",\"{user}\",\"{id}_{title}\"]\n• Flat by user: -o directory=[\"{category}\",\"{user}\"]\n\nSee docs: https://github.com/mikf/gallery-dl/blob/master/docs/options.md"
+                }),
+                "seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 0xffffffffffffffff,
+                    "tooltip": "Random seed to force re-execution. Click 🎲 to randomize or change manually. Useful for resuming downloads after timeout - change the seed to run again without modifying other settings."
                 })
             }
         }
@@ -881,8 +1012,9 @@ class GalleryDLNode:
         organize_files: bool = True,
         # New advanced options
         instagram_include: str = "posts",
-        download_timeout: int = 600,
+        download_timeout: int = 1800,
         extra_options: str = "",
+        seed: int = 0,
     ) -> Tuple[str, str, int, bool]:
         """
         Execute the gallery-dl download process.

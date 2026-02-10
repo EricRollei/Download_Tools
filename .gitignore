@@ -117,6 +117,7 @@ configs/twitter_cookies.json
 configs/auth_config.json
 configs/gallery-dl.conf
 configs/gallery-dl-*.conf
+configs/yt-dlp.conf
 configs/web_scraper/auth_config.json
 configs/node_settings.json
 *.secret
@@ -136,10 +137,13 @@ output/
 instagram-downloads/
 youtube-downloads/
 gallery-dl-downloads/
+gallery-dl-output/
+gallery-dl/
 web_scraper_output/
 test-downloads/
 temp/
 tmp/
+*.part
 
 # Debug files
 debug/
@@ -224,9 +228,9 @@ desktop.ini
 # Keep these files (force include)
 # ============================================================================
 
-# Force include yt-dlp config templates (they're safe without credentials)
-!configs/yt-dlp.conf
-!configs/yt-dlp-*.conf
+# Force include yt-dlp config templates (safe presets without credentials)
+!configs/yt-dlp-hq.conf
+!configs/yt-dlp-audio.conf
 
 # Force include all .example files for users to copy
 !configs/*.example

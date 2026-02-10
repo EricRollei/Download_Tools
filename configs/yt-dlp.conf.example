@@ -1,5 +1,6 @@
 # yt-dlp configuration file
-# Basic settings for most downloads
+# Copy this file to yt-dlp.conf and customise with your own settings.
+# yt-dlp.conf is gitignored so your credentials stay local.
 
 # Output filename template
 --output "%(uploader)s/%(title)s.%(ext)s"
@@ -23,8 +24,13 @@
 --sleep-interval 1
 --max-sleep-interval 5
 
-# Cookie settings
+# Cookie settings (pick one method)
 --cookies-from-browser firefox
+# --cookies /path/to/cookies.txt
+
+# Authentication (uncomment and fill in for sites that require login)
+# --username YOUR_EMAIL
+# --password YOUR_PASSWORD
 
 # Subtitle settings
 --write-subs

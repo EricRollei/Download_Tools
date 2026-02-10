@@ -313,7 +313,7 @@ def load_site_handlers():
             elif handler_class.__name__ == "YouTubeHandler":
                 return 5
             # Give site-specific handlers higher priority
-            elif handler_class.__name__ in ["RedditHandler", "BskyHandler", "FlickrHandler", "ArtsyHandler", "ModelMayhemHandler"]:
+            elif handler_class.__name__ in ["RedditHandler", "BskyHandler", "FlickrHandler", "ArtsyHandler", "ModelMayhemHandler", "BellazonHandler"]:
                 return 10
             # Give WixHandler high priority (Wix-powered sites need special handling)
             elif handler_class.__name__ == "WixHandler":

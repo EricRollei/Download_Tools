@@ -13,11 +13,155 @@ ComfyUI custom nodes for downloading media from 1000+ websites including Instagr
   - **Persistent config paths** - Paths are remembered between sessions
   - **Configurable timeout** - Up to 1 hour for large downloads
 
-- **Yt-dlp Node** - Download videos and audio from 1000+ platforms
+- **Web Image Scraper Node** - Extract images from any website via Playwright
+  - 25+ site-specific handlers for optimised extraction
+  - Automatic full-resolution image detection (skips thumbnails)
+  - Multi-page pagination and infinite-scroll support
+  - Spoiler / hidden-content auto-reveal (IPS forums)
+  - Video link collection (YouTube / Vimeo) for use with yt-dlp
+  - Duplicate detection via perceptual hashing
+  - Configurable minimum dimensions, parallel downloads
+
+- **Yt-dlp Node** - Download videos and audio from 1800+ platforms
   - YouTube, TikTok, Vimeo, Twitch, and more
   - Multiple quality options
   - Audio extraction support
   - Playlist support
+  - Authentication via cookies or credentials
+
+## 📺 Yt-dlp Supported Sites (Major Platforms)
+
+The yt-dlp node supports **1800+ websites**. Here are the most popular ones:
+
+### Video Platforms
+| Platform | Features | Auth Required |
+|----------|----------|---------------|
+| **YouTube** | Videos, playlists, channels, shorts, live streams, music | Optional (for age-restricted/private) |
+| **Vimeo** | Videos, albums, channels, on-demand, showcases | Optional (for private content) |
+| **Twitch** | VODs, clips, live streams | Optional |
+| **TikTok** | Videos, user profiles, collections | No |
+| **Dailymotion** | Videos, playlists, user content | Optional |
+| **Facebook** | Videos, reels, ads | No |
+| **Instagram** | Videos, reels, stories | No (use gallery-dl for images) |
+| **Twitter/X** | Videos, spaces, broadcasts | No |
+| **Reddit** | Video posts | No |
+| **Rumble** | Videos, channels | No |
+| **Kick** | VODs, clips, live streams | No |
+| **Odysee/LBRY** | Videos, channels, playlists | No |
+
+### Streaming Services (May Require Subscription)
+| Platform | Notes |
+|----------|-------|
+| **Crunchyroll** | Anime streaming |
+| **Nebula** | Creator platform |
+| **CuriosityStream** | Documentaries |
+| **Dropout** | Comedy streaming |
+| **Patreon** | Creator videos |
+| **Floatplane** | Tech creator content |
+
+### Music & Audio
+| Platform | Features |
+|----------|----------|
+| **SoundCloud** | Tracks, playlists, user content |
+| **Bandcamp** | Albums, tracks |
+| **Mixcloud** | Mixes, playlists |
+| **Audiomack** | Tracks, albums |
+| **Spotify** | Podcasts only (not music) |
+| **Apple Podcasts** | Podcast episodes |
+
+### News & Media
+| Platform | Notes |
+|----------|-------|
+| **BBC iPlayer** | UK content |
+| **PBS** | US public broadcasting |
+| **CBS News** | News clips |
+| **NBC** | News and shows |
+| **CNN** | News clips |
+| **ESPN** | Sports clips |
+| **Arte** | European culture |
+
+### Educational
+| Platform | Notes |
+|----------|-------|
+| **Khan Academy** | Free courses |
+| **TED** | Talks and playlists |
+| **Udemy** | Requires login |
+| **LinkedIn Learning** | Requires subscription |
+| **Coursera** | Some content |
+
+### Other Popular Sites
+| Platform | Type |
+|----------|------|
+| **Bilibili** | Chinese video platform |
+| **NicoNico** | Japanese video platform |
+| **VK** | Russian social network |
+| **Weibo** | Chinese social media |
+| **Archive.org** | Internet Archive |
+| **Dropbox** | Shared videos |
+| **Google Drive** | Shared videos |
+| **Steam** | Game trailers |
+| **Imgur** | Video content |
+
+### Full List
+For the complete list of 1800+ supported sites, see the [official yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
+
+### Site-Specific Authentication
+
+Some sites work better with authentication:
+
+```bash
+# Using .netrc file (recommended for security)
+--netrc
+
+# Using username/password directly
+--username YOUR_EMAIL --password YOUR_PASSWORD
+
+# Using browser cookies
+--cookies-from-browser firefox
+```
+
+**Tip:** For sites like Vimeo, YouTube (age-restricted), or any subscription service, authentication unlocks more content.
+
+## 🌐 Web Image Scraper – Site Handlers
+
+The Web Image Scraper node ships with **25+ site-specific handlers** that understand each site's DOM structure and extract full-resolution images automatically. A generic handler covers everything else.
+
+| Handler | Sites | Key Features |
+|---------|-------|--------------|
+| **BellazonHandler** | bellazon.com (IPS / Invision Community forums) | Full-res from `<a>` hrefs (not thumbnails); auto-paginate all topic pages; opens spoiler / hidden-content blocks; collects YouTube & Vimeo video links |
+| **InstagramHandler** | instagram.com | Posts, reels, stories; cookie auth |
+| **RedditHandler** | reddit.com | Gallery posts, age-gate bypass |
+| **BskyHandler** | bsky.app | Bluesky AT Protocol API |
+| **PinterestHandler** | pinterest.com | Pin boards, infinite scroll |
+| **FlickrHandler** | flickr.com | Original-size downloads |
+| **DeviantArtHandler** | deviantart.com | Full-resolution deviations |
+| **ArtStationHandler** | artstation.com | Project galleries |
+| **BehanceHandler** | behance.net | Project modules |
+| **500pxHandler** | 500px.com | Photo pages |
+| **UnsplashHandler** | unsplash.com | Full-res downloads |
+| **TumblrHandler** | tumblr.com | Blog posts |
+| **KavyarHandler** | kavyar.com | Model portfolios |
+| **CosmosHandler** | cosmos.so | Boards & collections |
+| **GoogleArtsHandler** | artsandculture.google.com | High-res artwork tiles |
+| **ArtsyHandler** | artsy.net | Artwork pages |
+| **ModelMayhemHandler** | modelmayhem.com | Portfolio images |
+| **WixHandler** | Wix-powered sites | Wix media URLs |
+| **WordPressHandler** | WordPress sites | Featured images, galleries |
+| **YouTubeHandler** | youtube.com | Thumbnails, channel art |
+| **PortfolioHandler** | Generic portfolio sites | Common portfolio layouts |
+| **GenericHandler** | Any website | Fallback: extracts all images meeting size thresholds |
+
+### IPS / Invision Community Forums (Bellazon)
+
+The **BellazonHandler** is purpose-built for Invision Community (IPS) forums:
+
+- **Full-resolution only** — IPS thumbnails use a different hash than the full-res image, so the handler reads the authoritative `<a href>` and `data-full-image` attributes instead of trying to rewrite thumbnail URLs.
+- **Spoiler handling** — Automatically opens `<details>` spoiler blocks ("Spoiler", "Spoiler Nudity", "Reveal hidden contents", etc.) before extraction so hidden images are included.
+- **Multi-page pagination** — Detects "PAGE X OF Y" controls and walks through every page of a topic automatically.
+- **Video link collection** — YouTube and Vimeo URLs embedded in posts are collected and returned as video items for optional download with the yt-dlp node.
+- **Zero thumbnail downloads** — Any URL containing `.thumb.` is hard-rejected at three levels (JS extraction, Python filter, post-processing).
+
+To add support for another IPS-powered forum, just add its domain to the `IPS_DOMAINS` list in `site_handlers/bellazon_handler.py`.
 
 ## 📦 Installation
 
@@ -70,14 +214,16 @@ ComfyUI custom nodes for downloading media from 1000+ websites including Instagr
 ### Yt-dlp Downloader
 
 1. Add "Yt-dlp Downloader" node to your workflow
-2. Enter a URL (e.g., YouTube video)
+2. Enter a URL (e.g., YouTube video, Vimeo, Twitch VOD, TikTok)
 3. Choose format:
    - `best` - Best quality video
+   - `best[height<=1080]` - Best quality up to 1080p
    - `audio-only` - Extract audio (requires FFmpeg)
    - Custom format string
-4. Execute!
+4. For private content, enable browser cookies or use config file with credentials
+5. Execute!
 
-**Supported Sites:** YouTube, TikTok, Vimeo, Twitch, Facebook, Instagram, Twitter, and 1000+ more. See [yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
+**Supported Sites:** YouTube, Vimeo, TikTok, Twitch, Facebook, Instagram, Twitter, Dailymotion, SoundCloud, and 1800+ more. See [yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) or the table above.
 
 ## � Instagram Downloads
 
@@ -151,7 +297,7 @@ Config files are stored in `download-tools/configs/`:
 
 - `gallery-dl.conf` - **Main config** with credentials for all sites (Instagram, Reddit, 500px, DeviantArt, Pinterest, Flickr, Bluesky)
 - `gallery-dl.conf.example` - Template for creating your own config
-- `yt-dlp.conf` - Yt-dlp default settings
+- `yt-dlp.conf.example` - Yt-dlp template (copy to `yt-dlp.conf` and add your credentials)
 - `yt-dlp-audio.conf` - Audio extraction preset
 - `yt-dlp-hq.conf` - High quality preset
 
@@ -188,8 +334,9 @@ Authentication required:
 
 ### "Downloads timing out"
 For large galleries:
-- Increase `download_timeout` (default: 600s, max: 3600s = 1 hour)
-- Large Instagram profiles may need the full hour
+- Increase `download_timeout` (default: 1800s / 30 min, max: 10 hours)
+- Large Instagram profiles may need several hours
+- If a download times out, just run again — gallery-dl automatically resumes using the download archive
 
 ### "Too many small images"
 Enable resolution filtering:
