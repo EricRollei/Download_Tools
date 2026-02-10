@@ -5,7 +5,38 @@ All notable changes to Download Tools for ComfyUI will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.4] - 2026-02-09
+
+### Added
+- **BellazonHandler** — New IPS/Invision Community forum handler for bellazon.com
+  - Full-resolution image extraction via `<a href>` links and `data-full-image` attributes
+  - Zero-thumbnail guarantee with 3-layer `.thumb.` URL rejection (JS, Python, post_process)
+  - Automatic multi-page pagination (detects total pages, navigates all)
+  - Spoiler/hidden content auto-opening (`<details>` blocks, IPS spoiler markup)
+  - YouTube/Vimeo video link collection with URL normalisation
+  - Lightbox link support (`data-ipslightbox`)
+- Gallery-dl Downloader improvements:
+  - Real-time progress output via threaded stdout/stderr streaming
+  - ComfyUI cancel button support for long-running downloads
+  - Skip already-organized files to avoid redundant processing
+  - Seed parameter for forced re-execution
+- `configs/yt-dlp.conf.example` — Clean template for yt-dlp configuration
+
+### Changed
+- Gallery-dl default timeout increased to 1800s (30 min), max to 36000s (10 hr)
+- README updated with comprehensive Web Image Scraper section and 25+ handler table
+- Updated config documentation to use `.example` pattern
+
+### Fixed
+- IPS forum thumbnail URL leak — discovered that IPS uses different hashes for
+  thumbnail vs full-res URLs; regex-stripping `.thumb.` produced wrong/404 URLs
+
+### Security
+- Removed plaintext credentials from `configs/yt-dlp.conf` in repository
+- Added `configs/yt-dlp.conf` to `.gitignore` to prevent future credential exposure
+- Created `.example` template pattern for sensitive config files
+
+## [0.8.3] - 2025-XX-XX
 
 ### Added
 - Initial public release preparation
